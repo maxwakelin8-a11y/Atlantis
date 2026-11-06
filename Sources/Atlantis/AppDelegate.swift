@@ -1,10 +1,15 @@
 import AppKit
 import AtlantisCore
+import os
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let debug = DebugOptions.fromArguments()
-    private lazy var model = AppModel(page: debug.page)
+    private lazy var model: AppModel = {
+        let model = AppModel(page: debug.page)
+        if let seconds = debug.seqtaUnloadAfter { model.seqtaUnloadAfter = .seconds(seconds) }
+        return model
+    }()
     private var mainWindow: MainWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -15,7 +20,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainWindow = controller
         controller.showWindow(nil)
         NSApp.activate()
-        Log.app.info("Launched")
+        DispatchQueue.main.async { [model] in // after the first frame is laid out
+            model.launchSeconds = ProcessStats.secondsSinceLaunch()
+            Log.signposter.emitEvent("Window shown")
+            Log.app.info("Launched in \(Int((model.launchSeconds ?? 0) * 1000)) ms")
+            if ProcessInfo.processInfo.arguments.contains("-debugPrintLaunch") {
+                print("launch_ms \(Int((model.launchSeconds ?? 0) * 1000))")
+                fflush(stdout)
+            }
+        }
+        if debug.networkCheck { Task { await NetworkCheck.run() } }
+        if debug.showHUD { model.showsHUD = true }
+        if !debug.pageSequence.isEmpty {
+            Task { [model, debug] in
+                for (page, seconds) in debug.pageSequence {
+                    model.page = page
+                    try? await Task.sleep(for: .seconds(seconds))
+                    Log.app.notice("Debug: \(page.rawValue, privacy: .public) switch \(model.lastPageSwitchMs ?? -1) ms")
+                }
+            }
+        }
 
         if let url = debug.snapshotURL, let window = controller.window {
             Task {
@@ -57,14 +81,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc private func seqtaForward() { visibleSeqta?.goForward() }
     @objc private func seqtaHome() { visibleSeqta?.goHome() }
     @objc private func seqtaExtensionSettings() { visibleSeqta?.showExtensionSettings() }
+    @objc private func toggleHUD() { model.showsHUD.toggle() }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(seqtaReload), #selector(seqtaHome), #selector(seqtaExtensionSettings):
-            visibleSeqta != nil
-        case #selector(seqtaBack): visibleSeqta?.canGoBack == true
-        case #selector(seqtaForward): visibleSeqta?.canGoForward == true
-        default: true
+            return visibleSeqta != nil
+        case #selector(seqtaBack):
+            return visibleSeqta?.canGoBack == true
+        case #selector(seqtaForward):
+            return visibleSeqta?.canGoForward == true
+        case #selector(toggleHUD):
+            menuItem.title = model.showsHUD ? "Hide Performance HUD" : "Show Performance HUD"
+            return true
+        default:
+            return true
         }
     }
 
@@ -110,6 +141,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         extensionSettings.keyEquivalentModifierMask = [.command, .option]
         view.addItem(extensionSettings)
         view.addItem(.separator())
+        let hud = commandItem("Show Performance HUD", #selector(toggleHUD), "p")
+        hud.keyEquivalentModifierMask = [.command, .option]
+        view.addItem(hud)
         let sidebar = view.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
         sidebar.keyEquivalentModifierMask = [.command, .control]
         let fullScreen = view.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")

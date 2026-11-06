@@ -17,9 +17,11 @@ cloud backend and no other users.
 
 - Phase: **M0: shell + design system** (roadmap in PRD §12). Started 2026-11-06.
 - Done: step 1, app base (SwiftPM app, system-styled sidebar, build/test scripts); step 2, SEQTA
-  tab from seqta-app (BetterSEQTA+, pop-ups, downloads, file chooser) and a basic Settings page.
-- Next in M0: performance HUD + signposts and the security baseline (Keychain wrapper, web views
-  blocked from the network by default); tokens + Gallery once the design is approved. After M0: M1, Docs core (GenOffice round-trip spike).
+  tab from seqta-app (BetterSEQTA+, pop-ups, downloads, file chooser) and a basic Settings page;
+  step 3, performance HUD + signposts, Keychain wrapper, `WebViews` factory (network blocked by
+  default), hidden SEQTA unloads after 10 min.
+- Left in M0: design tokens + Gallery, which wait for the approved design. After M0: M1, Docs core
+  (GenOffice round-trip spike), which doesn't depend on the design. After M0: M1, Docs core (GenOffice round-trip spike).
 
 Update this section whenever a milestone starts or finishes.
 
@@ -68,6 +70,8 @@ Update this section whenever a milestone starts or finishes.
   one warm Docs editor. Budgets are in PRD §17.
 - **Narrow bridge:** web views can only save the open doc or load its assets; check paths in
   Swift. Browser panels get no bridge.
+- **Make every web view through `WebViews`** (`Sources/Atlantis/WebViews.swift`) with
+  `network: .none` unless it truly needs the web. Only the temporary SEQTA tab uses `.open`.
 - **MCP and agent sockets are Unix sockets with `0600` permissions and a peer-UID check, never TCP.**
 - **No network** except SEQTA and the AI providers set in Settings. No telemetry.
 - Bots (PRD §7b) never send SEQTA messages, never get shell access, and treat what they read

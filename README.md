@@ -16,3 +16,8 @@ Needs macOS 15.4+ and the Command Line Tools (no Xcode project).
 Screenshots for design checks (the app quits after saving):
 
     build/Atlantis.app/Contents/MacOS/Atlantis -debugAppearance dark -debugPage today -debugSnapshot /tmp/today-dark.png
+
+Other debug flags: `-debugSnapshotDelay 8`, `-debugHUD YES`, `-debugNetworkCheck YES` (prints
+whether locked-down web views are really offline), `-debugPageSequence "seqta:15,today:10"`,
+`-debugSeqtaUnloadAfter 5`. The performance HUD is also in View ▸ Show Performance HUD (⌥⌘P), and
+launch and page-switch intervals show in Instruments under Points of Interest.

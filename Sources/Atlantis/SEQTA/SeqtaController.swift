@@ -38,18 +38,21 @@ final class SeqtaController: NSObject, WKWebExtensionWindow, WKNavigationDelegat
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var popups: [NSWindow] = []
     @ObservationIgnored private var keyObserver: NSObjectProtocol?
+    @ObservationIgnored private var unloadTask: Task<Void, Never>?
+    @ObservationIgnored private var isUnloaded = false
+
+    /// How long SEQTA stays loaded after you leave its page (PRD §17: hidden web views unload).
+    @ObservationIgnored var unloadAfter: Duration = .seconds(600)
 
     override init() {
+        // Network: open (WebViews.Network.open). The only such web view, and temporary (PRD §7d).
         let config = WKWebViewConfiguration()
         config.webExtensionController = host.controller
         config.websiteDataStore = .default()
         // Present as Safari so login pages treat the app like a normal browser.
         config.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
         config.preferences.isElementFullscreenEnabled = true
-        webView = WKWebView(frame: .zero, configuration: config)
-        #if DEBUG
-        webView.isInspectable = true
-        #endif
+        webView = WebViews.make(config)
         webView.allowsBackForwardNavigationGestures = true
         super.init()
         tab = SeqtaTab(owner: self)
@@ -96,6 +99,33 @@ final class SeqtaController: NSObject, WKWebExtensionWindow, WKNavigationDelegat
             }
             phase = .ready
             goHome()
+        }
+    }
+
+    // MARK: Showing and hiding
+
+    /// The SEQTA page appeared: cancel a pending unload, and reload if it was unloaded.
+    func pageShown() {
+        unloadTask?.cancel()
+        unloadTask = nil
+        if isUnloaded, phase == .ready {
+            isUnloaded = false
+            Log.seqta.info("Reloading SEQTA after unload")
+            goHome()
+        }
+    }
+
+    /// The SEQTA page was left: unload it after a while (one-shot, no repeating timer).
+    func pageHidden() {
+        guard phase == .ready else { return }
+        unloadTask?.cancel()
+        let delay = unloadAfter
+        unloadTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.webView.load(URLRequest(url: URL(string: "about:blank")!))
+            self.isUnloaded = true
+            Log.seqta.info("Unloaded hidden SEQTA page")
         }
     }
 

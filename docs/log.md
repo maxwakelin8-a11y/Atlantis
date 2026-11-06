@@ -54,3 +54,13 @@
   sync engine and a local JSON cache that MCP also reads. Messages work both ways: you can
   send (explicit Send + confirm); bots and MCP only draft. Updated PRD §3, F3, F7, §7b, §7d,
   §8, §9, §12 (new M4b), §14, §15 and the AGENTS.md hard rules.
+- M0 step 3, performance + security baseline: performance HUD (View ▸ ⌥⌘P: CPU, memory,
+  wake-ups, live web views, launch, page switch; measures only while showing), signposts for
+  launch and page switches, `Keychain` wrapper, `ContentRules` + `WebViews` factory (network
+  blocked by default; checked live with `-debugNetworkCheck`: PASS), hidden SEQTA page unloads
+  after 10 min (checked: 1 live web view → 0).
+- Measured: warm launch ~470 ms (first launch after a rebuild 1.1–2.6 s, likely macOS checking
+  the new signature), page switch 20 ms, idle on Today 0% CPU.
+- Problem: WebKit content-rule regexes reject `|`; rules are now one pattern each, with a test.
+- M0 is done except tokens + Gallery, which wait for the approved design.
+- Next: M1 spike (GenOffice markdown editor in a WKWebView + the round-trip test).

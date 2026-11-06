@@ -26,7 +26,13 @@ struct RootView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
         } detail: {
             detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear { model.pageDidAppear() } // inside .id, so it runs for every page
+                .id(model.page)
                 .navigationTitle(model.page.title)
+                .overlay(alignment: .bottomTrailing) {
+                    if model.showsHUD { PerfHUD(model: model) }
+                }
                 .toolbar { if model.page == .seqta { SeqtaToolbar(seqta: model.seqta) } }
         }
     }

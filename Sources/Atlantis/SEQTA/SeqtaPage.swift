@@ -18,7 +18,11 @@ struct SeqtaPage: View {
                         NoticeBar(text: problem) { seqta.dismissExtensionProblem() }
                     }
                 }
-                .onAppear { seqta.start() }
+                .onAppear {
+                    seqta.start()
+                    seqta.pageShown()
+                }
+                .onDisappear { seqta.pageHidden() }
         } else {
             ContentUnavailableView {
                 Label("Connect SEQTA", systemImage: "graduationcap")
