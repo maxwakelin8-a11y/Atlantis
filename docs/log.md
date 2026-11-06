@@ -28,3 +28,13 @@
 - Repo: using the existing public GitHub repo `maxwakelin8-a11y/Atlantis`; planning docs go in
   as the first PR, built fresh on GitHub's first commit (repo-local noreply identity).
 - Next: the design step (mood board → Design System → 4 key screens).
+
+## 2026-11-06
+- M0 step 1, app base: SwiftPM package (`Atlantis` app, `AtlantisCore` logic, `AtlantisTests`),
+  AppKit-hosted SwiftUI window with a system-styled sidebar (Today · SEQTA, Settings at the
+  bottom), placeholder pages, Go menu (⌘1–2) and ⌘, for Settings, remembered page and window
+  frame. `scripts/build-app.sh` (hardened runtime, ad-hoc signed) and `scripts/test.sh`.
+  Debug launch flags `-debugAppearance`, `-debugPage`, `-debugSnapshot` for screenshots.
+- Problem: with only the Command Line Tools, `swift test` builds Swift Testing suites but runs
+  none (silently passes). Tests are now an executable target run by `scripts/test.sh`.
+- Next: M0 step 2, move the SEQTA tab (WKWebExtension + BetterSEQTA+) in from seqta-app.
