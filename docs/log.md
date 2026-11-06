@@ -49,3 +49,8 @@
 - Checked: BetterSEQTA+ loads and SEQTA reaches the Microsoft sign-in. Idle on Today: 0% CPU,
   ~68 MB. Atlantis has its own website data, so you sign in to SEQTA once again.
 - Next: M0 step 3, performance HUD + signposts and the security baseline.
+- Decided: phase out the SEQTA tab (PRD §7d). Each SEQTA feature moves to a native page
+  (Today, Tasks, Inbox, Subjects with per-subject sidebar sub-items, Messages), fed by a hidden
+  sync engine and a local JSON cache that MCP also reads. Messages work both ways: you can
+  send (explicit Send + confirm); bots and MCP only draft. Updated PRD §3, F3, F7, §7b, §7d,
+  §8, §9, §12 (new M4b), §14, §15 and the AGENTS.md hard rules.

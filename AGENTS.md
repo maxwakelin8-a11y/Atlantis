@@ -58,7 +58,10 @@ Update this section whenever a milestone starts or finishes.
 - Credentials go in the macOS Keychain or a git-ignored `.env`. Never put them in the repo,
   logs or docs.
 - SEQTA: at most one automatic sync per morning, plus manual refreshes. No polling.
-- Don't send SEQTA messages from the app.
+- SEQTA messages are sent only by the user, from the Messages compose view with an explicit Send
+  and a confirm (PRD §7d). Bots and MCP tools never send; they can only draft into the Inbox.
+- The SEQTA web tab is temporary (PRD §7d). Don't build new features on it or on BetterSEQTA+;
+  put them in native pages fed by the SEQTA cache.
 - Keep v1 scope to PRD §7. New ideas go to PRD §7 "v3+: Later", not into the code.
 - Commit only when the user asks.
 - **Idle = zero work.** No polling or repeating timers. Live web views are the visible ones plus
@@ -85,7 +88,7 @@ compare screenshots against it.
 
 - `~/Developer/seqta-app`: source of the SEQTA web view code
 - `~/Developer/BetterSEQTA-Plus`: the extension fork (`npm run build:safari`)
-- `~/Developer/seqta-mcp`: MCP for SEQTA reads (Atlantis doesn't duplicate these)
+- `~/Developer/seqta-mcp`: MCP for SEQTA reads today; Atlantis's own MCP read tools take over (PRD §7d)
 - AI Dock and Tinycast (planned apps): connect through the shared layer described in PRD §10
 
 ## How we work (agreed 2026-11-04)

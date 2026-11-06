@@ -1,6 +1,6 @@
 # Project Atlantis: PRD (base v0.1)
 
-Status: base PRD (source of truth for this repo) · 2026-11-03 · Owner: the user · Written by: Claude
+Status: base PRD (source of truth for this repo) · 2026-11-03, updated 2026-11-06 · Owner: the user · Written by: Claude
 
 ## 1. One line
 
@@ -25,6 +25,7 @@ suite, starting with **Docs** (§7a).
 1. **The vault is the database.** All data is plain markdown in LifeOS. Atlantis has no data
    store of its own beyond caches. Obsidian keeps working alongside it.
 2. **SEQTA is a source, not a home.** The app reads it through the existing logged-in session.
+   Each part of SEQTA lives in a native part of Atlantis (§7d); the SEQTA web tab is temporary.
    SEQTA is never polled: one automatic sync each morning plus manual refreshes.
 3. **Agents propose and you approve.** Anything an agent writes lands in the Inbox first,
    unless you have allowed that action.
@@ -87,11 +88,12 @@ The only user is a Year 9 student who trains BJJ, builds apps and uses AI agents
 - Edits made in Obsidian show up live (file watcher). Conflicts are handled by re-reading
   before each write.
 
-**F3. SEQTA**
-- Keep the full SEQTA + BetterSEQTA+ web view as a tab, as seqta-app does today.
-- A structured sync of today's lessons, homework, assessments (14 days), notices and new marks
-  fills the Today screen and the daily note's machine-owned block and front matter, following
-  the AGENTS.md rules.
+**F3. SEQTA** (the full plan is §7d)
+- For now the full SEQTA + BetterSEQTA+ web view is a sidebar tab, as seqta-app does today.
+  It is temporary: features move out of it into Atlantis (§7d) and then the tab is removed.
+- A structured sync of today's lessons, homework, assessments (14 days), notices, new marks and
+  messages fills the Today screen, Subjects, Messages and the daily note's machine-owned block
+  and front matter, following the AGENTS.md rules.
 - Homework and new assessments are proposed as tasks in the Inbox with `source:: seqta:…`.
   They are never added silently.
 
@@ -112,7 +114,10 @@ The only user is a Year 9 student who trains BJJ, builds apps and uses AI agents
   note's machine block.
 
 **F7. Look and feel**
-- Sidebar: Today · Tasks · Inbox · Agents · Docs · Whiteboard · SEQTA · Settings (pages appear as their milestone lands).
+- Sidebar: Today · Tasks · Inbox · Messages · Subjects (one sub-item per subject) · Agents · Docs ·
+  Whiteboard · Settings (pages appear as their milestone lands). SEQTA is a tab only until
+  §7d's phase-out is done. No feature appears twice: the SEQTA web view never gets its own
+  task list, agents or sidebar.
 - Light and dark mode. Subject colours come from SEQTA.
 - Smooth, small animations, and keyboard-first (⌘1–5, J/K, Space to complete).
 
@@ -191,9 +196,10 @@ ClickUp-style agents as teammates, built natively into Atlantis. Replaces OpenMa
   - **Cheap fallback:** the cheap API also covers jobs that need an API. **SEQTA data and
     personal content never go to non-Claude cloud providers.** Bot and T3 coding usage share
     the subscription's limits.
-  - Tools: Atlantis stores, MCP clients (seqta-mcp, Yab) and the browser panel. No shell access.
+  - Tools: Atlantis stores (including the SEQTA cache), MCP clients (Yab) and the browser panel.
+    No shell access.
 - **Guardrails:** daily cost cap and max steps per bot. Bots use cached SEQTA data and never
-  sync or send messages. Content bots read is data, never instructions. Every run is logged
+  sync or send messages (they may draft a reply into the Inbox). Content bots read is data, never instructions. Every run is logged
   to `machine/atlantis/threads/`.
 
 ### 7c. Workspace (Phase 4)
@@ -205,6 +211,36 @@ ClickUp-style agents as teammates, built natively into Atlantis. Replaces OpenMa
   files in `~/Documents/Docs`, can be embedded in docs as a saved SVG preview, and can be
   linked to tasks.
 - **Sheets** (`.xlsx`, GenOffice/Univer) and **Slides** (`.pptx`, GenOffice), with AI stripped.
+
+### 7d. SEQTA inside Atlantis (phase-out of the SEQTA tab)
+
+Decided 2026-11-06. You shouldn't need "SEQTA the app" inside Atlantis. Each part of SEQTA
+moves to where it belongs, and your AI can read all of it.
+
+| SEQTA feature | Home in Atlantis |
+|---|---|
+| Timetable, lessons | Today timeline (week view later) |
+| Lesson content, homework | Class cards on Today; homework → Inbox proposal → Tasks |
+| Assessments (details, rubric, due dates) | Tasks (an assessment is a project with steps) + Today countdowns |
+| Notices | Today (collapsed) |
+| Marks, feedback, course files | **Subjects** page, one sidebar sub-item per subject (files open in Quick Look) |
+| Messages | **Messages** page: read, reply and compose (see the rules below) |
+| Submitting work | Opens that SEQTA page in a pop-up until a native version exists |
+| Anything else (reports, portals) | "Open in SEQTA" link to a pop-up |
+
+- **Sync engine:** a hidden web view with the logged-in session. It loads only for sign-in, the
+  morning sync, a manual refresh or a message send, then unloads (idle = zero work).
+  BetterSEQTA+ is only needed while the tab exists.
+- **Cache:** synced data is saved as JSON in `~/Library/Application Support/Atlantis/seqta/`
+  (local, not iCloud; safe to delete and rebuild). Only the parts listed in AGENTS.md go into
+  the vault.
+- **AI access:** every page reads the same cache, and the MCP server exposes it as read tools
+  (§8), so bots and Claude Code see what you see. This takes over from seqta-mcp over time.
+- **Messages both ways:** you can reply and compose in Atlantis. Sending needs your explicit
+  Send click in the compose view and a short confirm that shows the recipients. Bots and MCP
+  tools can draft a reply into the Inbox, but **never send**.
+- **Removing the tab:** once Today, Tasks, Subjects and Messages cover a normal school day,
+  the tab leaves the sidebar. The "Open in SEQTA" pop-up stays as the fallback.
 
 ### v2: Autopilot
 
@@ -233,6 +269,12 @@ ClickUp-style agents as teammates, built natively into Atlantis. Replaces OpenMa
 | `atlantis_inbox_post` | write | Post a proposal (always allowed) |
 | `atlantis_inbox_list` | read | Proposals still waiting and their states |
 | `atlantis_seqta_refresh` | action | Manual SEQTA sync (respects the once-per-morning auto rule) |
+| `atlantis_school_timetable` | read | Lessons for a date range, with lesson content and homework |
+| `atlantis_school_assessments` | read | Upcoming and past assessments, with details and marks |
+| `atlantis_school_subjects` | read | Subjects, teachers, marks, feedback and course files |
+| `atlantis_school_notices` | read | Notices for a date |
+| `atlantis_school_messages` | read | Message list and full messages |
+| `atlantis_message_draft` | write | Draft a reply or new message into the Inbox for you to send (never sends) |
 | `atlantis_docs_list` / `atlantis_docs_search` | read | Find docs by folder, name or text |
 | `atlantis_doc_read` | read | A doc's markdown |
 | `atlantis_doc_write` | write* | Create a doc, or propose edits (shown as a diff to accept in the editor) |
@@ -243,8 +285,8 @@ These replace seqta-mcp's `docs_*` tools once they work.
 \* Writes are gated by the allow list in Settings.
 
 Transport: a local MCP server bundled with the app (stdio helper → the app over a local
-socket), so it works from Claude Code and OpenMausBot on this Mac. SEQTA reads stay with
-seqta-mcp; Atlantis does not duplicate them.
+socket), so it works from Claude Code and OpenMausBot on this Mac. SEQTA reads come from
+Atlantis's cache (§7d) and take over from seqta-mcp once they work. No MCP tool sends a message.
 
 ## 9. Data (all in the vault)
 
@@ -255,6 +297,7 @@ seqta-mcp; Atlantis does not duplicate them.
 | `machine/atlantis/settings.md` | you via the app | Modes, working hours, allow list (front matter) |
 | `daily/YYYY-MM-DD.md` | as in AGENTS.md | Atlantis writes only the machine-owned parts |
 | `~/Documents/Docs/**.md` | you (via Docs), agents via MCP | Outside the vault. Plain markdown, with assets in `assets/` |
+| `~/Library/Application Support/Atlantis/seqta/*.json` | SEQTA sync | Local cache only, not in the vault or iCloud; rebuilt by a sync |
 
 New task fields (inline, Dataview style, all optional):
 
@@ -324,8 +367,9 @@ and there's an entry in `docs/log.md`.
 |---|---|---|
 | M1 | Docs core | **Spike first (1–2 days):** GenOffice's markdown renderer in a WKWebView with a narrow Swift bridge passes the round-trip test on real files. Then: create, edit, autosave and search docs, and paste images |
 | M2 | Tasks | VaultStore reads and writes `tasks.md`; add, edit and complete tasks; Obsidian edits show live and back again |
-| M3 | SEQTA sync + Today | Today shows real classes, assessments and tasks; the daily note's machine block fills in |
-| M4 | Inbox + MCP | `atlantis-mcp` over a locked-down Unix socket; Claude Code adds a task through MCP, it lands in the Inbox, and Accept applies it |
+| M3 | SEQTA sync + Today | Hidden sync engine + JSON cache (§7d). Today shows real classes, assessments and tasks; the daily note's machine block fills in |
+| M4 | Inbox + MCP | `atlantis-mcp` over a locked-down Unix socket; Claude Code adds a task through MCP, it lands in the Inbox, and Accept applies it. SEQTA read tools (§8) work from the cache |
+| M4b | Subjects + Messages | Subjects page with a sidebar sub-item per subject (marks, feedback, files); Messages page that reads, replies and composes (you send; bots only draft). **The SEQTA tab leaves the sidebar** (§7d) |
 
 **Phase 2: Your bot team** (§7b)
 
@@ -368,14 +412,15 @@ that you can do without.
 ## 14. Non-goals (v1)
 
 Accounts, cloud sync service, multi-user, Windows or web app, real-time collaboration,
-Sheets and Slides (later versions), a replacement for the SEQTA web UI, and sending SEQTA
-messages from Atlantis.
+Sheets and Slides (later versions), and bots or MCP tools sending SEQTA messages. (Replacing
+the SEQTA web UI is now a goal, §7d; you can send messages yourself.)
 
 ## 15. Risks
 
 | Risk | Mitigation |
 |---|---|
-| SEQTA or the fork changes break the sync | Keep the sync isolated; the SEQTA tab still works if the sync fails |
+| SEQTA or the fork changes break the sync | Keep the sync isolated; the "Open in SEQTA" pop-up still works if the sync fails |
+| A message is sent by mistake | Only from the compose view, with a confirm showing recipients; never from bots or MCP |
 | Atlantis and Obsidian write `tasks.md` at the same time | Re-read before each write, write atomically, change only the edited line |
 | Scope creep | v1 list is fixed; new ideas go to §7 v3+ |
 | GenOffice is large and changes fast | Copy one fixed snapshot of only the apps we use, record the commit, and don't track upstream |
