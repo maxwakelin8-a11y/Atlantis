@@ -2,7 +2,7 @@ import AppKit
 import AtlantisCore
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let debug = DebugOptions.fromArguments()
     private lazy var model = AppModel(page: debug.page)
     private var mainWindow: MainWindowController?
@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let url = debug.snapshotURL, let window = controller.window {
             Task {
-                try? await Task.sleep(for: .seconds(1.5)) // one-off, debug only
+                try? await Task.sleep(for: .seconds(self.debug.snapshotDelay)) // one-off, debug only
                 do {
                     try Snapshot.save(window, to: url)
                     Log.app.info("Saved snapshot to \(url.path, privacy: .public)")
@@ -44,6 +44,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let id = sender.representedObject as? String, let page = Page(rawValue: id) else { return }
         model.page = page
         mainWindow?.showWindow(nil)
+    }
+
+    /// SEQTA commands act only while the SEQTA page is showing and loaded.
+    private var visibleSeqta: SeqtaController? {
+        guard model.page == .seqta, let seqta = model.seqtaIfStarted, seqta.phase == .ready else { return nil }
+        return seqta
+    }
+
+    @objc private func seqtaReload() { visibleSeqta?.reload() }
+    @objc private func seqtaBack() { visibleSeqta?.goBack() }
+    @objc private func seqtaForward() { visibleSeqta?.goForward() }
+    @objc private func seqtaHome() { visibleSeqta?.goHome() }
+    @objc private func seqtaExtensionSettings() { visibleSeqta?.showExtensionSettings() }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(seqtaReload), #selector(seqtaHome), #selector(seqtaExtensionSettings):
+            visibleSeqta != nil
+        case #selector(seqtaBack): visibleSeqta?.canGoBack == true
+        case #selector(seqtaForward): visibleSeqta?.canGoForward == true
+        default: true
+        }
     }
 
     private func makeMenu() -> NSMenu {
@@ -80,6 +102,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add(go, "Go", to: main)
 
         let view = NSMenu()
+        view.addItem(commandItem("Reload", #selector(seqtaReload), "r"))
+        view.addItem(commandItem("Back", #selector(seqtaBack), "["))
+        view.addItem(commandItem("Forward", #selector(seqtaForward), "]"))
+        view.addItem(commandItem("SEQTA Home", #selector(seqtaHome), "H"))
+        let extensionSettings = commandItem("BetterSEQTA+ Settings…", #selector(seqtaExtensionSettings), ",")
+        extensionSettings.keyEquivalentModifierMask = [.command, .option]
+        view.addItem(extensionSettings)
+        view.addItem(.separator())
         let sidebar = view.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
         sidebar.keyEquivalentModifierMask = [.command, .control]
         let fullScreen = view.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
@@ -94,6 +124,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.windowsMenu = window
 
         return main
+    }
+
+    private func commandItem(_ title: String, _ action: Selector, _ key: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        return item
     }
 
     private func pageItem(_ page: Page, title: String, key: String) -> NSMenuItem {

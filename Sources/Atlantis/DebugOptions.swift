@@ -2,12 +2,13 @@ import AppKit
 import AtlantisCore
 
 /// Launch arguments for testing and screenshots, e.g.
-/// `Atlantis -debugAppearance dark -debugPage seqta -debugSnapshot /tmp/shot.png`.
+/// `Atlantis -debugAppearance dark -debugPage seqta -debugSnapshot /tmp/shot.png -debugSnapshotDelay 8`.
 /// They are read from the launch arguments only and never saved.
 struct DebugOptions {
     var appearance: NSAppearance?
     var page: Page?
     var snapshotURL: URL?
+    var snapshotDelay: Double = 1.5
 
     static func fromArguments(_ defaults: UserDefaults = .standard) -> DebugOptions {
         let args = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
@@ -20,6 +21,9 @@ struct DebugOptions {
         options.page = (args["debugPage"] as? String).flatMap(Page.init(rawValue:))
         if let path = args["debugSnapshot"] as? String {
             options.snapshotURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        }
+        if let delay = args["debugSnapshotDelay"] as? String, let seconds = Double(delay) {
+            options.snapshotDelay = seconds
         }
         return options
     }

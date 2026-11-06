@@ -16,9 +16,10 @@ cloud backend and no other users.
 ## Current status
 
 - Phase: **M0: shell + design system** (roadmap in PRD §12). Started 2026-11-06.
-- Done: step 1, the app base (SwiftPM app, window with a system-styled sidebar, build/test scripts).
-- Next in M0: the SEQTA tab from seqta-app; then tokens + Gallery (after the design is approved),
-  the performance HUD and the security baseline. After M0: M1, Docs core (GenOffice round-trip spike).
+- Done: step 1, app base (SwiftPM app, system-styled sidebar, build/test scripts); step 2, SEQTA
+  tab from seqta-app (BetterSEQTA+, pop-ups, downloads, file chooser) and a basic Settings page.
+- Next in M0: performance HUD + signposts and the security baseline (Keychain wrapper, web views
+  blocked from the network by default); tokens + Gallery once the design is approved. After M0: M1, Docs core (GenOffice round-trip spike).
 
 Update this section whenever a milestone starts or finishes.
 

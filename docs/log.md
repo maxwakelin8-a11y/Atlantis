@@ -38,3 +38,14 @@
 - Problem: with only the Command Line Tools, `swift test` builds Swift Testing suites but runs
   none (silently passes). Tests are now an executable target run by `scripts/test.sh`.
 - Next: M0 step 2, move the SEQTA tab (WKWebExtension + BetterSEQTA+) in from seqta-app.
+- M0 step 2, SEQTA tab: copied from seqta-app the web-extension host (BetterSEQTA+, staged as an
+  MV3 background page), pop-up login windows, downloads and the file chooser. SEQTA loads only
+  the first time its page is opened. Link rules moved to `AtlantisCore/SeqtaLinks` with tests.
+  Settings page (system form): SEQTA address, BetterSEQTA+ folder, version. View menu: Reload ⌘R,
+  Back ⌘[, Forward ⌘], SEQTA Home ⇧⌘H, BetterSEQTA+ Settings ⌥⌘,.
+- Left out on purpose: the LifeOS bridge (lets the page write anywhere in the vault, which breaks
+  the narrow-bridge rule) and the Google Drive/Docs panes and Google export (extra network).
+- The school's SEQTA address isn't in the code (public repo); it lives in local defaults.
+- Checked: BetterSEQTA+ loads and SEQTA reaches the Microsoft sign-in. Idle on Today: 0% CPU,
+  ~68 MB. Atlantis has its own website data, so you sign in to SEQTA once again.
+- Next: M0 step 3, performance HUD + signposts and the security baseline.

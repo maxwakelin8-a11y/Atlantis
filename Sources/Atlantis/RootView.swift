@@ -25,8 +25,17 @@ struct RootView: View {
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
         } detail: {
-            PageView(page: model.page)
+            detail
                 .navigationTitle(model.page.title)
+                .toolbar { if model.page == .seqta { SeqtaToolbar(seqta: model.seqta) } }
+        }
+    }
+
+    @ViewBuilder private var detail: some View {
+        switch model.page {
+        case .today: PlaceholderPage(page: .today, note: "Your classes, tasks and assessments will show here (M3).")
+        case .seqta: SeqtaPage(seqta: model.seqta)
+        case .settings: SettingsPage(model: model)
         }
     }
 
@@ -36,23 +45,39 @@ struct RootView: View {
     }
 }
 
+struct SeqtaToolbar: ToolbarContent {
+    let seqta: SeqtaController
+
+    var body: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
+            Button("Back", systemImage: "chevron.left", action: seqta.goBack)
+                .disabled(!seqta.canGoBack)
+                .help("Back (⌘[)")
+            Button("Forward", systemImage: "chevron.right", action: seqta.goForward)
+                .disabled(!seqta.canGoForward)
+                .help("Forward (⌘])")
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button("Reload", systemImage: "arrow.clockwise", action: seqta.reload)
+                .disabled(seqta.phase != .ready)
+                .help("Reload (⌘R)")
+            Button("BetterSEQTA+ Settings", systemImage: "wrench.adjustable", action: seqta.showExtensionSettings)
+                .disabled(seqta.phase != .ready)
+                .help("BetterSEQTA+ Settings (⌥⌘,)")
+        }
+    }
+}
+
 /// Placeholder for pages whose milestone hasn't landed yet.
-struct PageView: View {
+struct PlaceholderPage: View {
     let page: Page
+    let note: String
 
     var body: some View {
         ContentUnavailableView {
             Label(page.title, systemImage: page.systemImage)
         } description: {
             Text(note)
-        }
-    }
-
-    private var note: String {
-        switch page {
-        case .today: "Your classes, tasks and assessments will show here (M3)."
-        case .seqta: "SEQTA with BetterSEQTA+ moves in next (M0)."
-        case .settings: "Settings will show here."
         }
     }
 }
