@@ -18,3 +18,12 @@ Reusable lessons (dated bullets).
   put it before `.id` to run per identity.
 - 2026-11-06: The first one or two launches after re-signing the app are 1–2.6 s slower (macOS
   checks the new binary). Judge launch time on warm launches.
+- 2026-11-06: WKWebView doesn't paint while its window is covered (document.visibilityState is
+  "hidden"), so `screencapture` shows it blank. Debug screenshots draw each web view's
+  `takeSnapshot` on top. Draw into a `CGContext`; an `NSBitmapImageRep` made from a PNG
+  silently isn't drawable.
+- 2026-11-06: GenOffice's markdown save is block-level (`sourceSplice.ts`): unchanged blocks are
+  copied verbatim from the source and only edited runs are re-serialized, plus an "unchanged doc
+  → original bytes" shortcut. Keep both when touching the editor.
+- 2026-11-06: Reading iCloud vault files the first time can take a minute (downloads); time
+  editor work on a second run.

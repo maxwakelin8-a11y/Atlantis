@@ -26,6 +26,14 @@ enum AppSettings {
         set { defaults.set(newValue.path, forKey: "extensionPath") }
     }
 
+    /// The Docs folder (plain .md files, outside the vault).
+    static var docsURL: URL {
+        if let path = defaults.string(forKey: "docsPath"), !path.isEmpty {
+            return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        return home.appendingPathComponent("Documents/Docs", isDirectory: true)
+    }
+
     /// LifeOS vault (Obsidian, in iCloud Drive).
     static var vaultURL: URL {
         if let path = defaults.string(forKey: "vaultPath"), !path.isEmpty {
