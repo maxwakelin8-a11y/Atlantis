@@ -15,8 +15,16 @@ cloud backend and no other users.
 
 ## Current status
 
-- Phase: **M0: shell + design system** (roadmap in PRD §12). No code yet.
-- Next: M1, Docs core (start with the GenOffice round-trip spike).
+- Phase: **M0: shell + design system** (roadmap in PRD §12). Started 2026-11-06.
+- Done: step 1, app base (SwiftPM app, system-styled sidebar, build/test scripts); step 2, SEQTA
+  tab from seqta-app (BetterSEQTA+, pop-ups, downloads, file chooser) and a basic Settings page;
+  step 3, performance HUD + signposts, Keychain wrapper, `WebViews` factory (network blocked by
+  default), hidden SEQTA unloads after 10 min.
+- Left in M0: design tokens + Gallery, which wait for the approved design.
+- M1 spike **passed** (2026-11-06): GenOffice's editor in a locked-down WKWebView with a narrow
+  bridge; no-edit saves are byte-identical on 93/93 real files in WebKit. Code: `web/docs-editor`
+  (snapshot notes in `vendor/genoffice/SNAPSHOT.md`), `Sources/Atlantis/Docs`, `DocFolder`.
+- Next: the rest of M1 (search, paste images, folders, front matter panel, slash/table menus). After M0: M1, Docs core (GenOffice round-trip spike).
 
 Update this section whenever a milestone starts or finishes.
 
@@ -45,7 +53,9 @@ Update this section whenever a milestone starts or finishes.
 - LifeOS vault path: `~/Library/Mobile Documents/com~apple~CloudDocs/LifeOS`. Never write to
   its `human/` folder.
 - **Markdown round trip:** opening and saving a doc without changes must leave the file
-  byte-identical. Every Docs change must keep this test passing.
+  byte-identical. Every Docs change must keep this test passing: `npm test` in `web/docs-editor`
+  (add real folders with `ATLANTIS_RT_CORPUS=dir1:dir2`) and the in-app check
+  `Atlantis -debugRoundTrip "dir1:dir2"`.
 - Write files atomically, and change only what changed. Other tools (Obsidian, agents) may
   edit the same files.
 - Agent writes go to the Inbox for approval unless the user has allowed that action.
@@ -55,13 +65,18 @@ Update this section whenever a milestone starts or finishes.
 - Credentials go in the macOS Keychain or a git-ignored `.env`. Never put them in the repo,
   logs or docs.
 - SEQTA: at most one automatic sync per morning, plus manual refreshes. No polling.
-- Don't send SEQTA messages from the app.
+- SEQTA messages are sent only by the user, from the Messages compose view with an explicit Send
+  and a confirm (PRD §7d). Bots and MCP tools never send; they can only draft into the Inbox.
+- The SEQTA web tab is temporary (PRD §7d). Don't build new features on it or on BetterSEQTA+;
+  put them in native pages fed by the SEQTA cache.
 - Keep v1 scope to PRD §7. New ideas go to PRD §7 "v3+: Later", not into the code.
 - Commit only when the user asks.
 - **Idle = zero work.** No polling or repeating timers. Live web views are the visible ones plus
   one warm Docs editor. Budgets are in PRD §17.
 - **Narrow bridge:** web views can only save the open doc or load its assets; check paths in
   Swift. Browser panels get no bridge.
+- **Make every web view through `WebViews`** (`Sources/Atlantis/WebViews.swift`) with
+  `network: .none` unless it truly needs the web. Only the temporary SEQTA tab uses `.open`.
 - **MCP and agent sockets are Unix sockets with `0600` permissions and a peer-UID check, never TCP.**
 - **No network** except SEQTA and the AI providers set in Settings. No telemetry.
 - Bots (PRD §7b) never send SEQTA messages, never get shell access, and treat what they read
@@ -82,7 +97,7 @@ compare screenshots against it.
 
 - `~/Developer/seqta-app`: source of the SEQTA web view code
 - `~/Developer/BetterSEQTA-Plus`: the extension fork (`npm run build:safari`)
-- `~/Developer/seqta-mcp`: MCP for SEQTA reads (Atlantis doesn't duplicate these)
+- `~/Developer/seqta-mcp`: MCP for SEQTA reads today; Atlantis's own MCP read tools take over (PRD §7d)
 - AI Dock and Tinycast (planned apps): connect through the shared layer described in PRD §10
 
 ## How we work (agreed 2026-11-04)
