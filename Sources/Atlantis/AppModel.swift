@@ -28,6 +28,16 @@ final class AppModel {
     /// Created the first time the SEQTA page is shown, so launch stays fast and idle.
     private(set) var seqtaIfStarted: SeqtaController?
 
+    /// Created the first time Docs is shown, then kept warm (the one warm Docs editor, PRD §17).
+    private(set) var docsIfStarted: DocsController?
+
+    var docs: DocsController {
+        if let docsIfStarted { return docsIfStarted }
+        let controller = DocsController()
+        docsIfStarted = controller
+        return controller
+    }
+
     /// How long a hidden SEQTA page stays loaded.
     @ObservationIgnored var seqtaUnloadAfter: Duration = .seconds(600)
 

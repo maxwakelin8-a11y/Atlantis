@@ -1,0 +1,6 @@
+/* Atlantis host page for the editor. Uses GenOffice's tokens until Atlantis's design tokens
+   land (M0 design step); then this file maps them to the generated Atlantis CSS. */
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--surface); color: var(--text); font: 15px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; }
+.doc-host { height: 100%; overflow: auto; }
+.doc-host .doc-editor { max-width: 720px; margin: 0 auto; padding: 32px 40px 120px; outline: none; }

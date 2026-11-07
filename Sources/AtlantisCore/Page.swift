@@ -3,6 +3,7 @@
 /// Pages are added here as their milestone lands. Order in `allCases` is sidebar order.
 public enum Page: String, CaseIterable, Identifiable, Sendable {
     case today
+    case docs
     case seqta
     case settings
 
@@ -11,6 +12,7 @@ public enum Page: String, CaseIterable, Identifiable, Sendable {
     public var title: String {
         switch self {
         case .today: "Today"
+        case .docs: "Docs"
         case .seqta: "SEQTA"
         case .settings: "Settings"
         }
@@ -20,6 +22,7 @@ public enum Page: String, CaseIterable, Identifiable, Sendable {
     public var systemImage: String {
         switch self {
         case .today: "sun.max"
+        case .docs: "doc.text"
         case .seqta: "graduationcap"
         case .settings: "gearshape"
         }

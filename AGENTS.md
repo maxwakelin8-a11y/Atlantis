@@ -20,8 +20,11 @@ cloud backend and no other users.
   tab from seqta-app (BetterSEQTA+, pop-ups, downloads, file chooser) and a basic Settings page;
   step 3, performance HUD + signposts, Keychain wrapper, `WebViews` factory (network blocked by
   default), hidden SEQTA unloads after 10 min.
-- Left in M0: design tokens + Gallery, which wait for the approved design. After M0: M1, Docs core
-  (GenOffice round-trip spike), which doesn't depend on the design. After M0: M1, Docs core (GenOffice round-trip spike).
+- Left in M0: design tokens + Gallery, which wait for the approved design.
+- M1 spike **passed** (2026-11-06): GenOffice's editor in a locked-down WKWebView with a narrow
+  bridge; no-edit saves are byte-identical on 93/93 real files in WebKit. Code: `web/docs-editor`
+  (snapshot notes in `vendor/genoffice/SNAPSHOT.md`), `Sources/Atlantis/Docs`, `DocFolder`.
+- Next: the rest of M1 (search, paste images, folders, front matter panel, slash/table menus). After M0: M1, Docs core (GenOffice round-trip spike).
 
 Update this section whenever a milestone starts or finishes.
 
@@ -50,7 +53,9 @@ Update this section whenever a milestone starts or finishes.
 - LifeOS vault path: `~/Library/Mobile Documents/com~apple~CloudDocs/LifeOS`. Never write to
   its `human/` folder.
 - **Markdown round trip:** opening and saving a doc without changes must leave the file
-  byte-identical. Every Docs change must keep this test passing.
+  byte-identical. Every Docs change must keep this test passing: `npm test` in `web/docs-editor`
+  (add real folders with `ATLANTIS_RT_CORPUS=dir1:dir2`) and the in-app check
+  `Atlantis -debugRoundTrip "dir1:dir2"`.
 - Write files atomically, and change only what changed. Other tools (Obsidian, agents) may
   edit the same files.
 - Agent writes go to the Inbox for approval unless the user has allowed that action.

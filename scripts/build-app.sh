@@ -15,12 +15,19 @@ for arg in "$@"; do
   esac
 done
 
+# Docs editor bundle (web/docs-editor → Resources/DocsEditor), rebuilt when its sources change.
+EDITOR=web/docs-editor
+if [[ ! -f Resources/DocsEditor/editor.js ]] || [[ -n "$(find $EDITOR/src $EDITOR/vendor $EDITOR/build.mjs $EDITOR/package-lock.json -newer Resources/DocsEditor/editor.js 2>/dev/null | head -1)" ]]; then
+  (cd $EDITOR && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npm run build --silent)
+fi
+
 swift build -c $CONFIG --product Atlantis
 APP=build/Atlantis.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp ".build/$CONFIG/Atlantis" "$APP/Contents/MacOS/Atlantis"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp -R Resources/DocsEditor "$APP/Contents/Resources/DocsEditor"
 
 # Ad-hoc signed with the hardened runtime (PRD §17).
 codesign --force --options runtime --sign - "$APP"

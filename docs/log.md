@@ -64,3 +64,20 @@
 - Problem: WebKit content-rule regexes reject `|`; rules are now one pattern each, with a test.
 - M0 is done except tokens + Gallery, which wait for the approved design.
 - Next: M1 spike (GenOffice markdown editor in a WKWebView + the round-trip test).
+
+## 2026-11-06 (M1 spike)
+- GenOffice snapshot (commit 39374eb) trimmed to the 54 files the editor uses, in
+  `web/docs-editor/vendor/genoffice` (no AI, no Electron, no `ee/`; see SNAPSHOT.md). Atlantis
+  entry, session and narrow bridge in `web/docs-editor/src`, bundled with esbuild into
+  `Resources/DocsEditor` (~1.8 MB; diagrams stubbed).
+- Swift: `DocFolder` (paths stay in ~/Documents/Docs, UTF-8 only, atomic writes, no write when
+  unchanged, refuses to overwrite outside edits), Docs page with file list + editor, autosave
+  1.5 s after the last edit, ⌘S, New Doc ⌥⌘N, save on quit. Editor web view: network `.none`,
+  served from a custom scheme, one warm view.
+- **Spike result: pass.** No-edit save byte-identical on fixtures and 93/93 real files (vault +
+  ~/Developer) in real WebKit, and 97/97 in Node. GenOffice's block splice was exact on all of
+  them even without the "unchanged" shortcut. A one-word edit changes only its line (checked in
+  the app with a diff). Slowest open+serialize 177 ms (budget 300). Idle with a doc open: 0% CPU.
+- Problems: WebKit doesn't paint covered windows, so debug screenshots now paste each web view's
+  own snapshot in. Pinned KaTeX had a CVE; now 0.18.2 (npm audit clean).
+- Next: rest of M1 (search, image paste, folders, front matter panel, slash/table menus).

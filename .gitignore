@@ -4,3 +4,5 @@ build/
 .env
 *.xcuserstate
 node_modules/
+Resources/DocsEditor/
+web/docs-editor/meta.json

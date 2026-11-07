@@ -33,13 +33,17 @@ struct RootView: View {
                 .overlay(alignment: .bottomTrailing) {
                     if model.showsHUD { PerfHUD(model: model) }
                 }
-                .toolbar { if model.page == .seqta { SeqtaToolbar(seqta: model.seqta) } }
+                .toolbar {
+                    if model.page == .seqta { SeqtaToolbar(seqta: model.seqta) }
+                    if model.page == .docs { DocsToolbar(docs: model.docs) }
+                }
         }
     }
 
     @ViewBuilder private var detail: some View {
         switch model.page {
         case .today: PlaceholderPage(page: .today, note: "Your classes, tasks and assessments will show here (M3).")
+        case .docs: DocsPage(docs: model.docs)
         case .seqta: SeqtaPage(seqta: model.seqta)
         case .settings: SettingsPage(model: model)
         }
