@@ -1,0 +1,9 @@
+{"status":"200","payload":[
+ {"code":"2026S2","description":"Sample Semester 2","active":1,"id":78,"subjects":[
+  {"code":"ENGG9","classunit":31001,"description":"English 9","metaclass":29611,"title":"English 9","programme":3830,"marksbook_type":"numeric"},
+  {"code":"MATH9","classunit":31002,"description":"Mathematics 9","metaclass":29610,"title":"Mathematics 9","programme":3831,"marksbook_type":"numeric"}
+ ]},
+ {"code":"2026S1","description":"Sample Semester 1","active":0,"id":77,"subjects":[
+  {"code":"OLDX9","classunit":29999,"description":"Old Subject","metaclass":28000,"title":"Old Subject","programme":3000}
+ ]}
+]}

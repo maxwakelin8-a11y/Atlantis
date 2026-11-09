@@ -19,6 +19,9 @@ enum WebViews {
         case ephemeral
         /// Kept on disk in its own store (not shared with SEQTA), e.g. the Writer's view settings.
         case persistent(UUID)
+        /// The app's default store, where the SEQTA tab keeps its login. Only valid with
+        /// `.only(hosts)`: the hidden sync web view reuses the session but can reach SEQTA alone.
+        case sharedSession
     }
 
     /// The Docs page's own store (its localStorage holds Writer view settings only).
@@ -28,24 +31,28 @@ enum WebViews {
     private static var all: [Weak] = []
 
     /// A configuration with the network rule already applied. `.none` and `.only` use their own
-    /// data store (no shared cookies): in memory unless `storage` says otherwise.
+    /// data store (no shared cookies): in memory unless `storage` says otherwise. The one
+    /// exception is `.only` with `.sharedSession` (the hidden SEQTA sync).
     static func configuration(network: Network, storage: Storage = .ephemeral) async throws -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         let own: WKWebsiteDataStore = switch storage {
         case .ephemeral: .nonPersistent()
         case .persistent(let id): WKWebsiteDataStore(forIdentifier: id)
+        case .sharedSession: .default()
         }
         switch network {
         case .open:
             config.websiteDataStore = .default()
         case .none:
+            if case .sharedSession = storage { preconditionFailure("sharedSession is only for .only(hosts) web views") }
             config.websiteDataStore = own
             config.userContentController.add(try await ruleList("atlantis.block-all", ContentRules.blockAllNetwork()))
         case .only(let hosts):
             config.websiteDataStore = own
             let json = ContentRules.allowOnly(hosts: hosts)
-            let id = "atlantis.allow-\(abs(json.hashValue))"
-            config.userContentController.add(try await ruleList(id, json))
+            // A stable id, so the compiled list is reused across launches instead of piling up.
+            let slug = hosts.map { $0.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "." } }.sorted().joined(separator: "_")
+            config.userContentController.add(try await ruleList("atlantis.allow-\(slug)", json))
         }
         return config
     }
