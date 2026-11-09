@@ -21,15 +21,18 @@ if [[ ! -f Resources/DocsEditor/editor.js ]] || [[ -n "$(find $EDITOR/src $EDITO
   (cd $EDITOR && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npm run build --silent)
 fi
 
-swift build -c $CONFIG --product Atlantis
+swift build -c $CONFIG --product Atlantis --product atlantis-mcp
 APP=build/Atlantis.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp ".build/$CONFIG/Atlantis" "$APP/Contents/MacOS/Atlantis"
+# MCP stdio helper: agents run this; it forwards to the app's local socket (PRD §8).
+cp ".build/$CONFIG/atlantis-mcp" "$APP/Contents/MacOS/atlantis-mcp"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp -R Resources/DocsEditor "$APP/Contents/Resources/DocsEditor"
 
 # Ad-hoc signed with the hardened runtime (PRD §17).
+codesign --force --options runtime --sign - "$APP/Contents/MacOS/atlantis-mcp"
 codesign --force --options runtime --sign - "$APP"
 echo "Built $APP ($CONFIG)"
 
