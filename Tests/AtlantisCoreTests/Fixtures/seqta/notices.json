@@ -1,0 +1,4 @@
+{"status":"200","payload":[
+ {"id":9001,"title":"Lunchtime sport","contents":"<p>Bring <b>shoes</b>.</p><style>p{color:red}</style>","staff":"Mr Coach","staff_id":246,"label":9,"label_title":"All Students","colour":"#ff5722"},
+ {"id":9002,"title":"Library hours","contents":"Open until 4pm &mdash; every day.","staff":"Ms Librarian","label":12,"label_title":"Year 9"}
+]}

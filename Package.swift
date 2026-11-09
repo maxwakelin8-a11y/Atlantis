@@ -44,6 +44,7 @@ let package = Package(
             name: "AtlantisTests",
             dependencies: ["AtlantisCore"],
             path: "Tests",
+            exclude: ["AtlantisCoreTests/Fixtures"], // made-up SEQTA JSON, read by path in the tests
             swiftSettings: testingSwiftFlags,
             linkerSettings: testingLinkerFlags
         ),

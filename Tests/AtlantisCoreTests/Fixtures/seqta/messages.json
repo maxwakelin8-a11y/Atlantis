@@ -1,0 +1,5 @@
+{"status":"200","payload":{"hasMore":false,"ts":"2026-11-08 03:25:02.27900","messages":[
+ {"id":8101,"date":"2026-11-08 04:26:25.075868+00","attachments":true,"read":0,"sender":"Ms Example","subject":"Excursion form","sender_type":"staff","attachmentCount":2,"sender_id":246},
+ {"id":8100,"date":"2026-11-06 22:05:00.0","attachments":false,"read":1,"sender":"Mr Sample","subject":"Test results","sender_type":"staff","attachmentCount":0,"sender_id":247},
+ {"subject":"Row with no id"}
+]}}

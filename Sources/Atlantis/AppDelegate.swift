@@ -31,6 +31,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         model.mcp.start() // background queue; idle afterwards
         if debug.networkCheck { Task { await NetworkCheck.run() } }
+        if debug.seqtaSync {
+            Task { [model] in
+                await model.seqtaSync.refresh(reason: .manual)
+                let sync = model.seqtaSync
+                let result = sync.state == .idle ? (sync.lastReportSummary ?? "done") : "\(sync.state)"
+                Log.seqta.notice("Debug SEQTA sync: \(result, privacy: .public)")
+                print("SEQTA sync: \(result)")
+                fflush(stdout)
+            }
+        }
+        // Once-a-day sync at launch, and again on wake if today's hasn't run (no timers).
+        // After the first frame, so launch stays fast.
+        DispatchQueue.main.async { [model] in model.seqtaSync.startAutoSync() }
         if debug.showHUD { model.showsHUD = true }
         if let probe = ProcessInfo.processInfo.environment["ATLANTIS_DOCS_PROBE"] {
             // Debug: run JS in the Docs page after it loads, print the result (and a snapshot).
@@ -122,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc private func seqtaForward() { visibleSeqta?.goForward() }
     @objc private func seqtaHome() { visibleSeqta?.goHome() }
     @objc private func seqtaExtensionSettings() { visibleSeqta?.showExtensionSettings() }
+    @objc private func seqtaRefresh() { Task { await model.seqtaSync.refresh(reason: .manual) } }
     @objc private func toggleHUD() { model.showsHUD.toggle() }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -132,6 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return visibleSeqta?.canGoBack == true
         case #selector(seqtaForward):
             return visibleSeqta?.canGoForward == true
+        case #selector(seqtaRefresh):
+            menuItem.title = model.seqtaSync.isSyncing ? "Refreshing SEQTA…" : "Refresh SEQTA"
+            return !model.seqtaSync.isSyncing
         case #selector(toggleHUD):
             menuItem.title = model.showsHUD ? "Hide Performance HUD" : "Show Performance HUD"
             return true
@@ -177,6 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         let view = NSMenu()
         view.addItem(commandItem("Reload", #selector(seqtaReload), "r"))
+        view.addItem(commandItem("Refresh SEQTA", #selector(seqtaRefresh), "R")) // ⌘⇧R: syncs the cache
         view.addItem(commandItem("Back", #selector(seqtaBack), "["))
         view.addItem(commandItem("Forward", #selector(seqtaForward), "]"))
         view.addItem(commandItem("SEQTA Home", #selector(seqtaHome), "H"))
