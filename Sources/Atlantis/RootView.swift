@@ -35,7 +35,6 @@ struct RootView: View {
                 }
                 .toolbar {
                     if model.page == .seqta { SeqtaToolbar(seqta: model.seqta) }
-                    if model.page == .docs { DocsToolbar(docs: model.docs) }
                 }
         }
     }

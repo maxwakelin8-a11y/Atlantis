@@ -1,6 +1,8 @@
-/* Atlantis host page for the editor. Uses GenOffice's tokens until Atlantis's design tokens
-   land (M0 design step); then this file maps them to the generated Atlantis CSS. */
+/* Atlantis host page: the Writer fills the whole Docs page. Its own styles are in writer/page.css;
+   GenOffice's stylesheet is only kept for its node views (code blocks, maths). */
 html, body, #root { height: 100%; margin: 0; }
-body { background: var(--surface); color: var(--text); font: 15px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; }
-.doc-host { height: 100%; overflow: auto; }
-.doc-host .doc-editor { max-width: 720px; margin: 0 auto; padding: 32px 40px 120px; outline: none; }
+body { background: #f5f5f4; font: 13px -apple-system, BlinkMacSystemFont, sans-serif; -webkit-font-smoothing: antialiased; }
+@media (prefers-color-scheme: dark) { body { background: #171717; } }
+#root > #bsplus-writer { height: 100%; }
+/* Writer used SEQTA's Rubik for its chrome; Atlantis uses the system font. */
+#bsplus-writer { --wr-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
