@@ -25,6 +25,15 @@ document.getElementById('root')?.append(page.root)
 window.atlantis = {
   /** Saves every open document now (Swift calls this before quitting). */
   flush: () => page.flush(),
+  /** Opens the search-across-projects panel and types `query` (for debug screenshots). */
+  openSearch: (query: string) => {
+    page.openSearchAll()
+    const input = document.querySelector<HTMLInputElement>('.wr-gsearch-input')
+    if (input && query) {
+      input.value = query
+      input.dispatchEvent(new Event('input'))
+    }
+  },
   /** Read-only round-trip check: what a save would write for `raw`, with and without the shortcut. */
   roundTrip: (raw: string) => {
     const host = document.createElement('div')

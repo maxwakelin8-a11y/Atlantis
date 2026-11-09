@@ -4,6 +4,22 @@
 export type Entry = { name: string; kind: "dir" | "file" };
 export type Stat = { kind: "dir" | "file"; size: number; mtime: number };
 
+// Atlantis: search across projects (runs in Swift, which reads the files) and image writes.
+export type SearchSnippet = { before: string; match: string; after: string; occurrence: number };
+export type SearchHit = {
+  /** The project's folder name. */
+  project: string;
+  /** Absolute path of the document. */
+  path: string;
+  /** Path inside the project, e.g. "Draft/Intro.md" (the binder's path for it). */
+  relPath: string;
+  title: string;
+  titleMatches: boolean;
+  count: number;
+  snippets: SearchSnippet[];
+};
+export type SearchResult = { hits: SearchHit[]; truncated: boolean; scanned: number };
+
 export interface WriterFS {
   /** The Writer folder (absolute). */
   root(): string;
@@ -17,6 +33,10 @@ export interface WriterFS {
   move(from: string, to: string): Promise<void>;
   stat(path: string): Promise<Stat | null>;
   copyDir(from: string, to: string, skip: string[]): Promise<void>;
+  /** Atlantis: saves an image (base64) at `<project>/assets/<name>`; Swift refuses any other place or type. */
+  writeImage(file: string, base64: string): Promise<void>;
+  /** Atlantis: text search over every project's documents (title + body). */
+  search(query: string, limit?: number): Promise<SearchResult>;
   /** HTML → docx/rtf/odt/pdf at `file`. */
   exportHTML(html: string, format: string, file: string): Promise<void>;
   /** An imported file (base64) → Markdown or HTML. */
@@ -51,6 +71,8 @@ export function swiftFS(rootDir: string): WriterFS {
     move: (from, to) => call("fs.move", { from, to }),
     stat: (path) => call("fs.stat", { path }),
     copyDir: (from, to, skip) => call("fs.copyDir", { from, to, skip }),
+    writeImage: (file, base64) => call("fs.writeImage", { path: file, data: base64 }),
+    search: (query, limit = 200) => call("fs.search", { query, limit }),
     exportHTML: (html, format, file) => call("export", { html, format, path: file }),
     convert: (ext, base64) => call("convert", { ext, data: base64 }),
     open: (path, reveal) => call("open", { path, reveal }),
@@ -119,6 +141,43 @@ export function memoryFS(rootDir: string, files: Record<string, string> = {}): W
       parentDirs(`${to}/x`);
       for (const d of [...dirs]) if (d.startsWith(`${from}/`) && !skipped(d)) dirs.add(to + d.slice(from.length));
       for (const [f, t] of [...fileMap]) if (f.startsWith(`${from}/`) && !skipped(f)) fileMap.set(to + f.slice(from.length), t);
+    },
+    async writeImage(file, base64) {
+      // Same rules as Swift: <root>/<project>/assets/<name>.<png|jpg|jpeg|gif|webp>, never overwritten.
+      const m = /^(.*)\/([^/]+)\/assets\/([^/.][^/]*)\.(png|jpe?g|gif|webp)$/i.exec(file);
+      if (!m || m[1] !== rootDir) throw new Error("Images can only go in a project's assets folder.");
+      if (fileMap.has(file)) throw new Error("Something with that name is already there.");
+      parentDirs(file);
+      fileMap.set(file, `image:${base64}`);
+      writes.push(file);
+    },
+    async search(query, limit = 200) {
+      // A plain version of Swift's search, enough for the page tests.
+      const q = query.trim().toLowerCase();
+      const hits: SearchHit[] = [];
+      if (!q) return { hits, truncated: false, scanned: 0 };
+      let scanned = 0;
+      for (const [file, text] of [...fileMap].sort(([a], [b]) => a.localeCompare(b))) {
+        const rel = file.slice(rootDir.length + 1).split("/");
+        if (rel.length < 2 || rel[0].startsWith(".") || !/\.(md|markdown|txt)$/i.test(file) || ["Exports", "assets", "Trash"].includes(rel[1]) || rel.some((x) => x.startsWith("."))) continue;
+        scanned++;
+        const fm = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+        const body = fm ? text.slice(fm[0].length) : text;
+        const stem = rel[rel.length - 1].replace(/\.[^.]+$/, "");
+        const title = /^title:\s*"?(.*?)"?\s*$/m.exec(fm?.[1] ?? "")?.[1] || stem;
+        const lower = body.toLowerCase();
+        const snippets: SearchSnippet[] = [];
+        let count = 0;
+        for (let at = lower.indexOf(q); at !== -1 && count < 1000; at = lower.indexOf(q, at + q.length)) {
+          if (snippets.length < 3) snippets.push({ before: body.slice(Math.max(0, at - 40), at).replace(/\s+/g, " "), match: body.slice(at, at + q.length), after: body.slice(at + q.length, at + q.length + 60).replace(/\s+/g, " "), occurrence: count });
+          count++;
+        }
+        const titleMatches = title.toLowerCase().includes(q);
+        if (!count && !titleMatches) continue;
+        if (hits.length >= limit) return { hits, truncated: true, scanned };
+        hits.push({ project: rel[0], path: file, relPath: rel.slice(1).join("/"), title, titleMatches, count, snippets });
+      }
+      return { hits, truncated: false, scanned };
     },
     async exportHTML(_html, _format, file) {
       fileMap.set(file, "(binary)");

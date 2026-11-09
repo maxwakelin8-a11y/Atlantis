@@ -1,4 +1,5 @@
-import { call, swiftFS, type WriterFS } from "./fs";
+import { call, swiftFS, type SearchResult, type WriterFS } from "./fs";
+import { installImageBridge } from "./images"; // Atlantis
 import { createWriterStore } from "./store";
 import type { CiteStyle, Reference } from "./cite";
 import type { ProofIssue } from "./proofread";
@@ -102,7 +103,9 @@ const LATER = "This needs Claude, which comes to Atlantis in a later step.";
 export const writerApi = {
   setDir: async (_dir: string) => {
     const { dir } = await call<{ dir: string }>("writer.dir");
-    store = createWriterStore(swiftFS(dir));
+    const files = swiftFS(dir);
+    store = createWriterStore(files);
+    installImageBridge(files); // Atlantis: pasted images are saved through Swift too
     return { dir };
   },
   projects: () => st().projects() as Promise<{ dir: string; projects: ProjectSummary[] }>,
@@ -139,6 +142,8 @@ export const writerApi = {
   proofread: async (_paragraphs: Array<{ id: string; text: string }>): Promise<{ results: Record<string, ProofIssue[]> }> => {
     throw new Error(LATER);
   },
+  /** Atlantis: search every project's documents (Swift reads the files; nothing is indexed). */
+  search: (query: string, limit = 200) => call<SearchResult>("fs.search", { query, limit }),
   convert: (name: string, data: string) => st().convert({ name, data }) as Promise<{ markdown?: string; html?: string }>,
 };
 
