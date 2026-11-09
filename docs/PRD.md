@@ -55,7 +55,7 @@ suite, starting with **Docs** (§7a).
 | AI | Two paths: **(a)** the Claude API in the app for quick actions (breaking assessments down, planning the day); **(b)** an MCP server so OpenMausBot and T3 Code agents can operate the app |
 | Audience | **You only.** No accounts, sync service or onboarding. |
 | Scope | Built in the phases of §12: daily driver (Docs, Tasks, SEQTA, Today, Inbox, MCP) → your bot team (§7b) → Docs+ and polish → workspace (browser, whiteboard, Sheets, Slides) → autopilot. |
-| Office suite | Inside Atlantis. **Docs first**, then Sheets and Slides later. Docs are plain `.md` in `~/Documents/Docs`. Sheets and Slides may use `.xlsx`/`.pptx`. **Every file stays local** on this Mac (no cloud service). No Obsidian needed. |
+| Office suite | Inside Atlantis. **Docs first**, then Sheets and Slides later. Docs are plain `.md` files in Writer projects (iCloud Drive/Writer, §7a). Sheets and Slides may use `.xlsx`/`.pptx`. **Every file stays local** on this Mac (no cloud service). No Obsidian needed. |
 | Office suite code | Built from **GenOffice** (Apache-2.0, `github.com/genspark-ai/genoffice`). Its **markdown editor becomes Atlantis Docs**, with good ideas from its Word-style `docs` app moved into it. **GenOffice's own AI is removed.** Atlantis uses its own Claude features or no AI. Never copy `ee/` (different licence). |
 
 ## 6. Users and core jobs
@@ -128,7 +128,17 @@ The only user is a Year 9 student who trains BJJ, builds apps and uses AI agents
 Your own document editor inside Atlantis, replacing Google Docs, Pages and Obsidian for
 writing. Each doc is a plain `.md` file you own.
 
-**Source:** a copied, fixed snapshot of GenOffice's `apps/markdown` renderer (Tiptap/ProseMirror),
+**Decided 2026-11-07: Docs is the Writer.** The user's BetterSEQTA+ Writer tab (a Scrivener-style
+studio: project home, binder with Draft/Research/Notes/Trash, corkboard, outliner, inspector,
+format bar, find/replace, "/" menu, comments, snapshots, templates, word targets, focus mode,
+export to Word/PDF/RTF/ODT/HTML/Markdown) is copied into Atlantis as the Docs page
+(`web/docs-editor/src/writer`, MIT). Its text editing runs on GenOffice's lossless editor below,
+so unchanged text stays byte-identical. It uses the same folder as the BetterSEQTA+ Writer, so
+existing projects open in both. Writer features that need Claude (spelling & grammar checks,
+reading a web page for a reference) and SEQTA (start from an assessment) are switched off until
+Atlantis has its Claude client and SEQTA cache.
+
+**Editor engine:** a copied, fixed snapshot of GenOffice's `apps/markdown` renderer (Tiptap/ProseMirror),
 with the upstream commit recorded in `docs/findings.md`. Features worth having from GenOffice's
 Word-style `apps/docs` (for example comments, autocorrect, case change and print layout) are
 re-built inside this markdown editor, which is called **Docs**. GenOffice's Electron main process
@@ -136,11 +146,14 @@ is rewritten in Swift. All of GenOffice's AI code (agent-core, ai-provider, AI p
 is removed.
 
 **Storage**
-- `~/Documents/Docs/` with your own folders. One doc = one `.md` file.
+- The Writer folder (default `~/Library/Mobile Documents/com~apple~CloudDocs/Writer`, set in
+  Settings): one folder per project with `.writer.json` (binder order, settings), `Draft/`,
+  `Research/`, `Notes/`, `Trash/`, `Exports/` and `.snapshots/`. One doc = one `.md` file.
+  Nothing is deleted for real: emptying the Trash moves files into a hidden `.deleted` folder.
 - Images go in an `assets/` folder next to the doc and are linked with relative paths, so the
   files still read well in any markdown app.
-- Optional front matter (`title`, `tags`, `subject`, `task`) that Atlantis manages. It's
-  hidden in the editor.
+- Front matter holds the Writer's fields (`title`, `synopsis`, `status`, `label`, `target`,
+  `notes`, `comments`, …), edited in the inspector, hidden in the editor. Other keys are kept.
 - Edits made outside the app (T3 Code agents, Finder, git) show up live through a file watcher.
 
 **Editor (v1)**
@@ -150,7 +163,7 @@ is removed.
   callouts.
 - A "/" menu to insert blocks; ⌘B/⌘I/⌘K etc.; outline sidebar from headings.
 - Autosave (no save button), with version history through local snapshots in
-  `~/Documents/Docs/.history/`.
+  each project's `.snapshots/`.
 - Word count, focus mode (dims everything but the current paragraph).
 
 **Organising**
@@ -166,7 +179,7 @@ is removed.
 **Connected to the rest of Atlantis**
 - Link a doc to a task or SEQTA assessment. The task shows a "📄 open doc" button.
 - Export to **PDF** and **.docx** (for SEQTA submissions), then attach it to the SEQTA
-  submission from the SEQTA tab (the existing file chooser lists `~/Documents/Docs`).
+  submission from the SEQTA tab.
 
 **Later in Docs:** comments, templates (essay, lab report, notes), Google Docs import,
 print layout settings.
@@ -296,7 +309,7 @@ Atlantis's cache (§7d) and take over from seqta-mcp once they work. No MCP tool
 | `machine/atlantis/inbox.md` | Atlantis, agents | One proposal per line with an id and state |
 | `machine/atlantis/settings.md` | you via the app | Modes, working hours, allow list (front matter) |
 | `daily/YYYY-MM-DD.md` | as in AGENTS.md | Atlantis writes only the machine-owned parts |
-| `~/Documents/Docs/**.md` | you (via Docs), agents via MCP | Outside the vault. Plain markdown, with assets in `assets/` |
+| `iCloud Drive/Writer/<project>/**.md` | you (via Docs), agents via MCP | Outside the vault. Writer projects (§7a): plain markdown + `.writer.json` |
 | `~/Library/Application Support/Atlantis/seqta/*.json` | SEQTA sync | Local cache only, not in the vault or iCloud; rebuilt by a sync |
 
 New task fields (inline, Dataview style, all optional):
@@ -365,7 +378,7 @@ and there's an entry in `docs/log.md`.
 
 | # | Milestone | Done when |
 |---|---|---|
-| M1 | Docs core | **Spike first (1–2 days):** GenOffice's markdown renderer in a WKWebView with a narrow Swift bridge passes the round-trip test on real files. Then: create, edit, autosave and search docs, and paste images |
+| M1 | Docs core | **Spike first (1–2 days):** GenOffice's markdown renderer in a WKWebView with a narrow Swift bridge passes the round-trip test on real files. Then: the BetterSEQTA+ Writer as the Docs page on top of it (projects, binder, editor, export), then search across projects and pasting images |
 | M2 | Tasks | VaultStore reads and writes `tasks.md`; add, edit and complete tasks; Obsidian edits show live and back again |
 | M3 | SEQTA sync + Today | Hidden sync engine + JSON cache (§7d). Today shows real classes, assessments and tasks; the daily note's machine block fills in |
 | M4 | Inbox + MCP | `atlantis-mcp` over a locked-down Unix socket; Claude Code adds a task through MCP, it lands in the Inbox, and Accept applies it. SEQTA read tools (§8) work from the cache |
@@ -457,8 +470,9 @@ in the chrome. The search index is a cache you can rebuild. Check with Instrumen
 CPU and memory metrics, and the debug HUD.
 
 **Security and privacy:**
-- **Narrow bridge:** web views get only "save this doc" and "load an asset next to it".
-  Swift checks every path stays inside `~/Documents/Docs`. HTML in docs is sanitised, with a
+- **Narrow bridge:** the Docs page gets only plain file operations (list, read UTF-8, atomic
+  text write, mkdir, move, stat, copy folder), export/import conversion, and open-in-Finder, and
+  Swift (`WriterFiles`) refuses any path outside the Writer folder, symlinks included. HTML in docs is sanitised, with a
   strict CSP. Browser panels get no bridge.
 - **MCP socket:** Unix domain socket with `0600` permissions and a peer-UID check. Never TCP.
 - **Network:** no telemetry, and GenOffice's updater and phone-home calls are removed. The only

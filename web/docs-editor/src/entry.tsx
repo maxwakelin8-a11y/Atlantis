@@ -1,14 +1,50 @@
-// Atlantis Docs editor entry. Mounts GenOffice's markdown editor (vendored snapshot) and talks
-// to Swift over the narrow bridge in bridge.ts. No network, no AI, no file access from here.
+// Atlantis Docs: the Writer from BetterSEQTA+ (src/writer) on top of GenOffice's lossless markdown
+// editor (vendor/genoffice). Files are reached only through Swift (src/writer/fs.ts); no network.
 import '../vendor/genoffice/packages/ui/tokens.css'
 import '../vendor/genoffice/packages/ui/dropdown.css'
-import '../vendor/genoffice/packages/ui/markdown.css'
 import '../vendor/genoffice/renderer/styles.css'
-import '../vendor/genoffice/renderer/markdown-themes.css'
 import 'katex/dist/katex.min.css'
 import './atlantis.css'
-import { createRoot } from 'react-dom/client'
-import { DocsEditor } from './DocsEditor'
+import { WriterPage } from './writer/page'
+import { createEditor, sessionOf } from './writer/editor'
+import { call } from './writer/fs'
+import { setEnglish } from './locale'
 
-const root = document.getElementById('root')
-if (root) createRoot(root).render(<DocsEditor />)
+declare global {
+  interface Window {
+    atlantis?: Record<string, unknown>
+  }
+}
+
+setEnglish()
+
+let author = ''
+const page = new WriterPage({ settings: () => ({ folder: '', author, citeAi: false }) })
+document.getElementById('root')?.append(page.root)
+
+window.atlantis = {
+  /** Saves every open document now (Swift calls this before quitting). */
+  flush: () => page.flush(),
+  /** Read-only round-trip check: what a save would write for `raw`, with and without the shortcut. */
+  roundTrip: (raw: string) => {
+    const host = document.createElement('div')
+    const editor = createEditor({ element: host, markdown: raw, onChange: () => {} })
+    try {
+      const session = sessionOf(editor)!
+      return {
+        serialize: session.serialize(),
+        serializeWithoutShortcut: session.serializeWithoutShortcut(),
+        hasSourceMap: session.hasSourceMap,
+      }
+    } finally {
+      editor.destroy()
+    }
+  },
+}
+
+void call<{ author?: string }>('writer.host')
+  .then((h) => {
+    author = h.author ?? ''
+  })
+  .catch(() => {})
+  .finally(() => void page.start())

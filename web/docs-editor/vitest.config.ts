@@ -16,8 +16,9 @@ export default defineConfig({
       json5: noDiagrams,
     },
   },
+  esbuild: { jsx: 'automatic' },
   test: {
-    include: ['test/**/*.test.ts'],
+    include: ['test/**/*.test.ts', 'src/**/*.test.ts'],
     environment: 'jsdom',
     testTimeout: 120000,
   },

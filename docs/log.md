@@ -81,3 +81,28 @@
 - Problems: WebKit doesn't paint covered windows, so debug screenshots now paste each web view's
   own snapshot in. Pinned KaTeX had a CVE; now 0.18.2 (npm audit clean).
 - Next: rest of M1 (search, image paste, folders, front matter panel, slash/table menus).
+
+## 2026-11-07: M1 step 2, Docs becomes the Writer
+
+- User: the editor was in Chinese and missing everything they need; copy the BetterSEQTA+ Writer.
+- Fixed the Chinese (GenOffice's language defaults to zh).
+- Copied the Writer (page, editor, binder, corkboard, outliner, inspector, find, "/" menu,
+  comments, snapshots, templates, compile/export) into `web/docs-editor/src/writer`, and the
+  Writer store from seqta-mcp (`store.ts`). Its editing runs on GenOffice's lossless editor; the
+  store keeps front matter bytes unless a field changes and skips no-op writes. Files go through
+  `DocsController` → `WriterFiles` (paths confined to the Writer folder, tested). Export via
+  textutil / headless Chromium, import via textutil. Docs uses the same Writer folder, so the
+  user's two projects open. `DocFolder` and the single-doc page are gone; no File menu.
+- Results: 138 web tests and 23 Swift tests pass. Writer save path byte-identical on 88/88 real
+  files (Node) and the in-app check 88/88 in real WebKit. An in-app edit changed only its line,
+  front matter untouched. Idle with a project open: 0.03 s CPU in 30 s.
+- Problems: quit hung (fixed); Claude/SEQTA Writer features are stubbed; outside edits can be
+  overwritten (logged).
+- Next: user tries it; then search across projects and pasting images.
+
+## 2026-11-09: new way of working
+- User: build the full app first (Phase 1 + 2), fix things slowly after. PR per milestone instead of
+  approving each step; plain macOS styling via shared tokens until their design is ready; helper
+  subagents (Sonnet 5.5 / Haiku 5.5) may build parts. AGENTS.md "How we work" and "Design" updated.
+- Committed M1 step 2 (the Writer) as its own PR. Tests: 23 Swift, 49 web (round trip on fixtures).
+- Next: M1 rest (search across projects, paste images), then M2 Tasks.

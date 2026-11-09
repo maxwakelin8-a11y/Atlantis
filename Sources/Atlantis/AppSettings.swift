@@ -26,12 +26,22 @@ enum AppSettings {
         set { defaults.set(newValue.path, forKey: "extensionPath") }
     }
 
-    /// The Docs folder (plain .md files, outside the vault).
-    static var docsURL: URL {
-        if let path = defaults.string(forKey: "docsPath"), !path.isEmpty {
-            return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+    /// The Writer folder Docs works in: one folder per project (same layout as BetterSEQTA+'s
+    /// Writer, so its projects open here too). Default: iCloud Drive/Writer.
+    static var writerURL: URL {
+        get {
+            if let path = defaults.string(forKey: "writerPath"), !path.isEmpty {
+                return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+            }
+            return home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/Writer", isDirectory: true)
         }
-        return home.appendingPathComponent("Documents/Docs", isDirectory: true)
+        set { defaults.set(newValue.path, forKey: "writerPath") }
+    }
+
+    /// The name Docs puts on title pages when exporting.
+    static var authorName: String {
+        get { defaults.string(forKey: "authorName") ?? "" }
+        set { defaults.set(newValue, forKey: "authorName") }
     }
 
     /// LifeOS vault (Obsidian, in iCloud Drive).

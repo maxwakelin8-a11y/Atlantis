@@ -14,21 +14,35 @@ enum WebViews {
         case open
     }
 
+    enum Storage {
+        /// In-memory: nothing is kept after the web view goes away.
+        case ephemeral
+        /// Kept on disk in its own store (not shared with SEQTA), e.g. the Writer's view settings.
+        case persistent(UUID)
+    }
+
+    /// The Docs page's own store (its localStorage holds Writer view settings only).
+    static let docsStore = UUID(uuidString: "6A7F3C2E-0D1B-4B8E-9C55-41D1A7E0D0C5")!
+
     private static var compiled: [String: WKContentRuleList] = [:]
     private static var all: [Weak] = []
 
-    /// A configuration with the network rule already applied. `.none` and `.only` also use a
-    /// private, in-memory data store (no shared cookies).
-    static func configuration(network: Network) async throws -> WKWebViewConfiguration {
+    /// A configuration with the network rule already applied. `.none` and `.only` use their own
+    /// data store (no shared cookies): in memory unless `storage` says otherwise.
+    static func configuration(network: Network, storage: Storage = .ephemeral) async throws -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
+        let own: WKWebsiteDataStore = switch storage {
+        case .ephemeral: .nonPersistent()
+        case .persistent(let id): WKWebsiteDataStore(forIdentifier: id)
+        }
         switch network {
         case .open:
             config.websiteDataStore = .default()
         case .none:
-            config.websiteDataStore = .nonPersistent()
+            config.websiteDataStore = own
             config.userContentController.add(try await ruleList("atlantis.block-all", ContentRules.blockAllNetwork()))
         case .only(let hosts):
-            config.websiteDataStore = .nonPersistent()
+            config.websiteDataStore = own
             let json = ContentRules.allowOnly(hosts: hosts)
             let id = "atlantis.allow-\(abs(json.hashValue))"
             config.userContentController.add(try await ruleList(id, json))

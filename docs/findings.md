@@ -27,3 +27,16 @@ Reusable lessons (dated bullets).
   → original bytes" shortcut. Keep both when touching the editor.
 - 2026-11-06: Reading iCloud vault files the first time can take a minute (downloads); time
   editor work on a second run.
+- 2026-11-07: GenOffice's UI language is a module variable that starts as `'zh'` (set by its
+  Electron shell). Render its `LocaleProvider` with `'en'` (also around every `EditorContent`,
+  since its React node views read the context), with a stub `window.markdownApi`.
+- 2026-11-07: GenOffice's `Highlight` mark has no commands; tiptap toolbars expecting
+  `toggleHighlight` need a tiny extension. Underline is off in GenOffice (not GFM).
+- 2026-11-07: A core tiptap `Editor` can be shown through `@tiptap/react`'s `EditorContent`
+  (render with `flushSync` before loading content) so React node views work in non-React UI.
+- 2026-11-07: Don't use `.terminateLater` and then wait on `callAsyncJavaScript`: WebKit's reply
+  never arrives in that run-loop mode. Return `.terminateCancel`, save, then terminate again.
+- 2026-11-07: `WKScriptMessageHandlerWithReply` sends Swift `nil` to JS as `undefined`, not
+  `null`; compare with `!= null`.
+- 2026-11-07: `WKWebsiteDataStore(forIdentifier:)` gives a web view its own persistent store
+  (localStorage survives relaunch) without sharing cookies with the SEQTA tab.

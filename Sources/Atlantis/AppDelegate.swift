@@ -31,22 +31,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         if debug.networkCheck { Task { await NetworkCheck.run() } }
         if debug.showHUD { model.showsHUD = true }
-        if let doc = debug.openDoc {
+        if let probe = ProcessInfo.processInfo.environment["ATLANTIS_DOCS_PROBE"] {
+            // Debug: run JS in the Docs page after it loads, print the result (and a snapshot).
             Task { [model] in
                 model.page = .docs
                 await model.docs.start()
-                await model.docs.open(doc)
-                if let probe = ProcessInfo.processInfo.environment["ATLANTIS_DOCS_PROBE"], let webView = model.docs.webView {
-                    try? await Task.sleep(for: .seconds(2))
-                    let result = try? await webView.callAsyncJavaScript(probe, contentWorld: .page)
-                    if let path = ProcessInfo.processInfo.environment["ATLANTIS_DOCS_SNAPSHOT"],
-                       let image = try? await webView.takeSnapshot(configuration: nil),
-                       let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
-                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
-                    }
-                    print("probe: \(String(describing: result)) current=\(model.docs.current?.url.lastPathComponent ?? "nil") ready=\(model.docs.isReady) problem=\(model.docs.problem ?? "-") frame=\(webView.frame) inWindow=\(webView.window != nil) super=\(String(describing: webView.superview.map { type(of: $0) })) hidden=\(webView.isHiddenOrHasHiddenAncestor) alpha=\(webView.alphaValue)")
-                    fflush(stdout)
+                await model.docs.waitUntilReady()
+                try? await Task.sleep(for: .seconds(Double(ProcessInfo.processInfo.environment["ATLANTIS_DOCS_PROBE_DELAY"] ?? "") ?? 2))
+                guard let webView = model.docs.webView else { return }
+                do {
+                    let result = try await webView.callAsyncJavaScript(probe, contentWorld: .page)
+                    print("probe: \(String(describing: result))")
+                } catch {
+                    print("probe error: \(error)")
                 }
+                fflush(stdout)
             }
         }
         if !debug.roundTripDirs.isEmpty {
@@ -78,13 +77,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
+    private var savedForQuit = false
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let docs = model.docsIfStarted, docs.isDirty else { return .terminateNow }
+        // Never lose edits on quit: save Docs first, then quit again. (Not .terminateLater: in that
+        // mode WebKit's JavaScript replies never arrive, so the save would wait forever.)
+        guard let docs = model.docsIfStarted, !savedForQuit else { return .terminateNow }
         Task {
-            await docs.saveNow() // never lose edits on quit
-            sender.reply(toApplicationShouldTerminate: true)
+            await docs.flush()
+            savedForQuit = true
+            sender.terminate(nil)
         }
-        return .terminateLater
+        return .terminateCancel
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -114,11 +118,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc private func seqtaHome() { visibleSeqta?.goHome() }
     @objc private func seqtaExtensionSettings() { visibleSeqta?.showExtensionSettings() }
     @objc private func toggleHUD() { model.showsHUD.toggle() }
-    @objc private func docsNew() {
-        model.page = .docs
-        Task { await model.docs.newDoc() }
-    }
-    @objc private func docsSave() { Task { await model.docsIfStarted?.saveNow() } }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
@@ -128,8 +127,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return visibleSeqta?.canGoBack == true
         case #selector(seqtaForward):
             return visibleSeqta?.canGoForward == true
-        case #selector(docsSave):
-            return model.page == .docs && model.docsIfStarted?.isDirty == true
         case #selector(toggleHUD):
             menuItem.title = model.showsHUD ? "Hide Performance HUD" : "Show Performance HUD"
             return true
@@ -154,12 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         appMenu.addItem(withTitle: "Quit Atlantis", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         add(appMenu, "Atlantis", to: main)
 
-        let file = NSMenu()
-        let newDoc = commandItem("New Doc", #selector(docsNew), "n")
-        newDoc.keyEquivalentModifierMask = [.command, .option]
-        file.addItem(newDoc)
-        file.addItem(commandItem("Save", #selector(docsSave), "s"))
-        add(file, "File", to: main)
+        // No File menu: Docs (the Writer) has its own keys (⌥⌘N new document, autosave) inside the page.
 
         let edit = NSMenu()
         edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")

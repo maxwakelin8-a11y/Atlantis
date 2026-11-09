@@ -17,8 +17,6 @@ struct DebugOptions {
     /// `-debugRoundTrip "dir1:dir2"`: load every .md file there into the real editor, check a
     /// no-edit save gives identical bytes, print a summary and quit. Read-only.
     var roundTripDirs: [URL] = []
-    /// `-debugOpenDoc /path/file.md`: open this doc on the Docs page (use with `-docsPath`).
-    var openDoc: URL?
     /// `-debugHUD YES`: start with the performance HUD showing.
     var showHUD = false
     /// `-debugPageSequence "seqta:15,today:10"`: show each page for that many seconds, in order.
@@ -43,7 +41,6 @@ struct DebugOptions {
         options.seqtaUnloadAfter = (args["debugSeqtaUnloadAfter"] as? String).flatMap(Double.init)
         options.roundTripDirs = ((args["debugRoundTrip"] as? String) ?? "")
             .split(separator: ":").map { URL(fileURLWithPath: (String($0) as NSString).expandingTildeInPath) }
-        options.openDoc = (args["debugOpenDoc"] as? String).map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
         options.showHUD = (args["debugHUD"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.pageSequence = ((args["debugPageSequence"] as? String) ?? "")
             .split(separator: ",")
