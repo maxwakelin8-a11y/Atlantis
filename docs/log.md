@@ -106,3 +106,14 @@
   subagents (Sonnet 5.5 / Haiku 5.5) may build parts. AGENTS.md "How we work" and "Design" updated.
 - Committed M1 step 2 (the Writer) as its own PR. Tests: 23 Swift, 49 web (round trip on fixtures).
 - Next: M1 rest (search across projects, paste images), then M2 Tasks.
+
+## 2026-11-09: Phase 1 build with helpers
+- Shared base (#5), then helpers built in parallel worktrees: M1 search + pasted images (#10),
+  Tasks (#8), SEQTA sync engine + cache (#7), MCP plumbing (#9), Inbox (#6). All merged on
+  `p1/integration`: 208 Swift + 68 web tests pass; real `tasks.md` round-trips byte-identical
+  (checked read-only); real Writer docs 18/18 byte-identical.
+- Problems: Haiku helpers stop before doing any work here (context fills at startup), so Sonnet/Opus
+  are used. Two helpers hit the API rate limit mid-task; their partial work was committed and
+  resumed. `npm ci` hangs/fails in fresh worktrees (certificate error), so helpers copy
+  `Resources/DocsEditor`/`node_modules` from the main checkout.
+- Next: Today page, MCP tools, Subjects + Messages; then Phase 2 bots.

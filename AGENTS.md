@@ -15,20 +15,16 @@ cloud backend and no other users.
 
 ## Current status
 
-- Phase: **M0: shell + design system** (roadmap in PRD §12). Started 2026-11-06.
-- Done: step 1, app base (SwiftPM app, system-styled sidebar, build/test scripts); step 2, SEQTA
-  tab from seqta-app (BetterSEQTA+, pop-ups, downloads, file chooser) and a basic Settings page;
-  step 3, performance HUD + signposts, Keychain wrapper, `WebViews` factory (network blocked by
-  default), hidden SEQTA unloads after 10 min.
-- Left in M0: design tokens + Gallery, which wait for the approved design.
-- M1 spike **passed** (2026-11-06): GenOffice's editor in a locked-down WKWebView with a narrow
-  bridge; no-edit saves are byte-identical on 93/93 real files in WebKit. Code: `web/docs-editor`
-  (snapshot notes in `vendor/genoffice/SNAPSHOT.md`), `Sources/Atlantis/Docs`, `DocFolder`.
-- M1 step 2 (2026-11-07): **Docs is now the BetterSEQTA+ Writer** (`web/docs-editor/src/writer`,
-  copied, changes marked "Atlantis:") running on GenOffice's lossless editor, in the same Writer
-  folder (iCloud Drive/Writer). Its store code (from seqta-mcp) runs in the page; files go through
-  `DocsController` → `WriterFiles`. Claude/SEQTA-backed Writer features are off for now.
-- Next: rest of M1 (search across projects, paste images), then Writer features that need Claude.
+- **Building Phase 1 + 2 straight through** (decided 2026-11-09; see "How we work").
+- Done and in PRs (stacked; merge in order, with merge commits): #4 Writer (M1 step 2) → #5 shared
+  base (all sidebar pages, tokens in `Sources/Atlantis/Design`, `VaultPaths`/`TextFile`) → #6 Inbox,
+  #7 SEQTA sync engine + cache, #8 Tasks, #9 MCP plumbing (`atlantis-mcp`), #10 Docs search +
+  pasted images (M1 done).
+- `p1/integration` merges all of the above (tests: 208 Swift, 68 web).
+- In progress (helpers): M3b Today + SEQTA→Inbox + daily note; M4 MCP tools + allow list;
+  M4b Subjects + Messages. Then Phase 2 (M5 agent runtime, M6, M7).
+- Not live-tested yet: SEQTA sync against real SEQTA (needs the user signed in).
+- Left from M0: the Gallery screen waits for the user's design.
 
 Update this section whenever a milestone starts or finishes.
 

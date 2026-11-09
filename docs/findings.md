@@ -40,3 +40,10 @@ Reusable lessons (dated bullets).
   `null`; compare with `!= null`.
 - 2026-11-07: `WKWebsiteDataStore(forIdentifier:)` gives a web view its own persistent store
   (localStorage survives relaunch) without sharing cookies with the SEQTA tab.
+
+## 2026-11-09
+- Helper agents in fresh T3 worktrees can't `npm ci` (certificate error / hang). Copy the main
+  checkout's git-ignored `Resources/DocsEditor` (or `web/docs-editor/node_modules`) instead.
+- Hidden-window `-debugSnapshot` doesn't paint late DOM changes in WebKit (page reports `hidden`,
+  0×0 viewport); screenshot web UI in headless Chromium with sample data instead.
+- Stacked PRs: merge with merge commits (not squash) so later PRs' diffs shrink by themselves.
