@@ -110,7 +110,7 @@ is approved, restyle screens to match it and compare screenshots against it.
 
 - **Build first, fix later.** Build Phase 1 and Phase 2 (M1 rest → M7) straight through without
   stopping for approval between steps; then switch to fixing issues slowly.
-- **One main thread** plans and codes. Start helper agents only when the user asks.
+- **One main thread** plans, reviews and merges. Helper agents (Sonnet 5.5 / Haiku 5.5) may build milestones or parts of them in their own worktrees (user OK 2026-11-09).
 - **Branch + PR per milestone:** each milestone gets its own branch (stacked on the previous one
   if it isn't merged yet) and a GitHub PR with a short "try this" list (2–5 things). The user
   merges. Never push to `main` directly. Committing and pushing milestone branches is allowed.
