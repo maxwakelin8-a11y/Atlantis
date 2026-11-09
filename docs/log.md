@@ -106,3 +106,11 @@
   subagents (Sonnet 5.5 / Haiku 5.5) may build parts. AGENTS.md "How we work" and "Design" updated.
 - Committed M1 step 2 (the Writer) as its own PR. Tests: 23 Swift, 49 web (round trip on fixtures).
 - Next: M1 rest (search across projects, paste images), then M2 Tasks.
+
+## 2026-11-09: M2 Tasks brought up to date with p1/base
+- Merged `p1/base` (M1 search + images, M3 SEQTA sync, M4a MCP) into `m2/tasks`. One conflict in
+  `AppModel.swift`: kept both the lazy `tasks` store and the `mcp` service.
+- Build OK; 181 Swift tests pass.
+- Problem: two killed `swift build` runs left a stale `.build/.lock` and `build.db-journal`, and
+  later builds hung until those were deleted.
+- Next: user reviews/merges PR #8.

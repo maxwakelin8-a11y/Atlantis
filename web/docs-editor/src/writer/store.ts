@@ -25,7 +25,8 @@ import type { WriterFS } from "./fs";
 
 const PROJECT_FILE = ".writer.json";
 const TEXT_EXT = new Set([".md", ".markdown", ".txt"]);
-const HIDDEN_DIRS = new Set(["Exports", ".snapshots", ".deleted"]);
+// Atlantis: "assets" holds pasted images (see images.ts), so it isn't a binder folder.
+const HIDDEN_DIRS = new Set(["Exports", ".snapshots", ".deleted", "assets"]);
 const ROLES = ["draft", "research", "notes", "trash"];
 const ROLE_NAMES = { draft: "Draft", research: "Research", notes: "Notes", trash: "Trash" };
 const DOC_FIELDS = ["title", "synopsis", "status", "label", "compile", "target", "notes", "comments", "created"];
