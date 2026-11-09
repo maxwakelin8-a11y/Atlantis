@@ -23,6 +23,10 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
             }
             let config = try await WebViews.configuration(network: .none, storage: .persistent(WebViews.docsStore))
             config.setURLSchemeHandler(EditorSchemeHandler(root: editor), forURLScheme: EditorSchemeHandler.scheme)
+            // Images in docs (`md-asset:///<path>`), confined to the Writer folder.
+            config.setURLSchemeHandler(WriterAssetSchemeHandler(files: { [weak self] in
+                self?.files ?? WriterFiles(root: AppSettings.writerURL)
+            }), forURLScheme: WriterAssetSchemeHandler.scheme)
             config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "writer")
             let webView = WebViews.make(config)
             self.webView = webView
@@ -132,6 +136,27 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
             return ["kind": s.kind.rawValue, "size": s.size, "mtime": s.mtime]
         case "fs.copyDir":
             try await Self.background { try files.copyDir(from, to: to, skip: skip) }
+        case "fs.writeImage":
+            // A pasted or dropped image (base64), saved into <project>/assets only.
+            guard let data = Data(base64Encoded: body["data"] as? String ?? "") else { throw WriterFiles.Failure.notAnImage }
+            try await Self.background { try files.writeImage(path, data: data) }
+        case "fs.search":
+            let query = body["query"] as? String ?? ""
+            let limit = min(max(body["limit"] as? Int ?? 200, 1), 500)
+            let result = try await Self.background { files.search(query, limit: limit) }
+            return [
+                "truncated": result.truncated,
+                "scanned": result.scanned,
+                "hits": result.hits.map { hit -> [String: Any] in
+                    [
+                        "project": hit.project, "path": hit.path, "relPath": hit.relPath, "title": hit.title,
+                        "titleMatches": hit.titleMatches, "count": hit.count,
+                        "snippets": hit.snippets.map {
+                            ["before": $0.before, "match": $0.match, "after": $0.after, "occurrence": $0.occurrence]
+                        },
+                    ]
+                },
+            ] as [String: Any]
         default:
             Log.web.error("Docs bridge: unknown op \(op, privacy: .public)")
             throw WriterFiles.Failure.outsideFolder

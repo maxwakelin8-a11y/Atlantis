@@ -29,6 +29,7 @@ Only the files the Atlantis editor bundle actually uses (checked with esbuild's 
 
 ## Changes to the copied files
 
-None. Atlantis code lives in `src/` and swaps out missing packages with aliases in `build.mjs`
+One, marked "Atlantis:": `renderer/editor/localImage.ts` also accepts pasted/dropped WebP images
+(`image/webp`). Otherwise none. Atlantis code lives in `src/` and swaps out missing packages with aliases in `build.mjs`
 and `vitest.config.ts`. To copy more (for example the slash or table menus), take them from the
 same commit and record it here.
