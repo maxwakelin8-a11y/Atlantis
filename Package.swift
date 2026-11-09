@@ -19,6 +19,11 @@ let testingLinkerFlags: [LinkerSetting] = needsCLTTesting
 let package = Package(
     name: "Atlantis",
     platforms: [.macOS("15.4")],
+    products: [
+        .executable(name: "Atlantis", targets: ["Atlantis"]),
+        // The MCP stdio helper bundled in Atlantis.app (Contents/MacOS). Forwards to the app's socket.
+        .executable(name: "atlantis-mcp", targets: ["AtlantisMCP"]),
+    ],
     targets: [
         // Logic with no UI, so it can be tested on its own.
         .target(name: "AtlantisCore", path: "Sources/AtlantisCore"),
@@ -27,6 +32,11 @@ let package = Package(
             dependencies: ["AtlantisCore"],
             path: "Sources/Atlantis",
             linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("SwiftUI")]
+        ),
+        .executableTarget(
+            name: "AtlantisMCP",
+            dependencies: ["AtlantisCore"],
+            path: "Sources/AtlantisMCP"
         ),
         // Tests are an executable, not a .testTarget: with only the Command Line Tools,
         // `swift test` builds Swift Testing suites but never runs them. Run scripts/test.sh.
