@@ -85,6 +85,8 @@ const EXT_BY_MIME: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/gif': 'gif',
+  // Atlantis: WebP too (Swift's fs.writeImage accepts png, jpg, gif and webp).
+  'image/webp': 'webp',
 }
 
 function imageFileIn(data: DataTransfer | null): File | null {
