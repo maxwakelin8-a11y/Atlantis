@@ -38,6 +38,17 @@ final class AppModel {
         return controller
     }
 
+    /// Created the first time Tasks is shown (or anything else needs tasks); then it watches
+    /// `machine/tasks.md` for edits made elsewhere.
+    private(set) var tasksIfStarted: TaskStore?
+
+    var tasks: TaskStore {
+        if let tasksIfStarted { return tasksIfStarted }
+        let store = TaskStore(vault: VaultPaths(root: AppSettings.vaultURL))
+        tasksIfStarted = store
+        return store
+    }
+
     /// How long a hidden SEQTA page stays loaded.
     @ObservationIgnored var seqtaUnloadAfter: Duration = .seconds(600)
 
