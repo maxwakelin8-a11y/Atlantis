@@ -1,0 +1,4 @@
+{"status":"200","payload":{"id":8101,"date":"2026-11-08 04:26:25.075868+00","subject":"Excursion form","sender":"Ms Example","sender_type":"staff","read":0,
+ "contents":"<p>Hi all,</p><p>Please return the <b>form</b> by Friday.<br/>Thanks</p>",
+ "participants":[{"name":"Test Student","id":4242},{"xx_display":"Another Student"}],
+ "files":[{"filename":"form.pdf","uuid":"11111111-2222-3333-4444-555555555555","mimetype":"application/pdf"},{"filename":"no-uuid.txt"}]}}
