@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 fflush(stdout)
             }
         }
+        model.mcp.start() // background queue; idle afterwards
         if debug.networkCheck { Task { await NetworkCheck.run() } }
         if debug.showHUD { model.showsHUD = true }
         if let probe = ProcessInfo.processInfo.environment["ATLANTIS_DOCS_PROBE"] {
@@ -89,6 +90,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             sender.terminate(nil)
         }
         return .terminateCancel
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model.mcp.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

@@ -70,6 +70,8 @@ struct SettingsPage: View {
                 Text("One folder per project, as plain Markdown files. The same folder the BetterSEQTA+ Writer uses, so its projects open here too. Reopen Docs after changing it.")
             }
 
+            AgentsMCPSection(mcp: model.mcp)
+
             Section("About") {
                 LabeledContent("Version", value: Self.version)
                 LabeledContent("Your data", value: "Stays on this Mac")
