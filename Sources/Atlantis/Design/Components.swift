@@ -19,7 +19,15 @@ struct SectionCard<Content: View>: View {
         }
         .padding(Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.l))
+        .cardStyle()
+    }
+}
+
+extension View {
+    /// The shared card look: surface fill with a hairline edge, so cards read on any background.
+    func cardStyle() -> some View {
+        background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.l))
+            .overlay(RoundedRectangle(cornerRadius: Radius.l).strokeBorder(Palette.separator))
     }
 }
 
