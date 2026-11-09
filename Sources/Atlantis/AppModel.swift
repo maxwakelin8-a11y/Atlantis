@@ -63,6 +63,9 @@ final class AppModel {
         return store
     }
 
+    /// The local MCP server agents talk to (PRD §8). Started at launch, stopped at quit.
+    let mcp = MCPService()
+
     /// How long a hidden SEQTA page stays loaded.
     @ObservationIgnored var seqtaUnloadAfter: Duration = .seconds(600)
 

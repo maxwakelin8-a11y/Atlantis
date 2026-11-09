@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 fflush(stdout)
             }
         }
+        model.mcp.start() // background queue; idle afterwards
         if debug.networkCheck { Task { await NetworkCheck.run() } }
         if debug.seqtaSync {
             Task { [model] in
@@ -102,6 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             sender.terminate(nil)
         }
         return .terminateCancel
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model.mcp.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
