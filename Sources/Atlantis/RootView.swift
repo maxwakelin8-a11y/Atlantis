@@ -43,7 +43,7 @@ struct RootView: View {
 
     @ViewBuilder private var detail: some View {
         switch model.page {
-        case .today: PlaceholderPage(page: .today, note: "Your classes, tasks and assessments will show here (M3).")
+        case .today: TodayPage(model: model)
         case .tasks: TasksPage(store: model.tasks)
         case .inbox: InboxPage(store: model.inbox)
         case .messages: PlaceholderPage(page: .messages, note: "SEQTA messages will show here (M4b).")
