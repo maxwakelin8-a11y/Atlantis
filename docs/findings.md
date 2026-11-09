@@ -40,3 +40,6 @@ Reusable lessons (dated bullets).
   `null`; compare with `!= null`.
 - 2026-11-07: `WKWebsiteDataStore(forIdentifier:)` gives a web view its own persistent store
   (localStorage survives relaunch) without sharing cookies with the SEQTA tab.
+
+- If `swift build` hangs with no output after a build was killed, delete the stale
+  `.build/.lock` and `.build/build.db-journal` and run it again. (2026-11-09)

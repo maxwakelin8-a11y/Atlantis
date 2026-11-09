@@ -13,6 +13,8 @@ public struct WriterFiles: Sendable {
         case alreadyExists
         case tooBig
         case notAllowedType(String)
+        case notAnImage
+        case badImagePath
 
         public var errorDescription: String? {
             switch self {
@@ -22,6 +24,8 @@ public struct WriterFiles: Sendable {
             case .alreadyExists: "Something with that name is already there."
             case .tooBig: "That file is too big."
             case .notAllowedType(let ext): "Docs can't write .\(ext) files."
+            case .notAnImage: "That isn't a PNG, JPEG, GIF or WebP image."
+            case .badImagePath: "Images can only go in a project's assets folder."
             }
         }
     }
@@ -43,6 +47,11 @@ public struct WriterFiles: Sendable {
     /// Text files the page may write (docs, the project file, snapshots, text exports).
     public static let writableExtensions: Set<String> = ["md", "markdown", "txt", "json", "html"]
     public static let maxRead = 20_000_000
+    /// Image types the page may write, into a project's `assets` folder only.
+    public static let writableImageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp"]
+    /// Image types the editor may display from the Writer folder (reading only).
+    public static let displayableImageExtensions: Set<String> = writableImageExtensions.union(["heic", "heif", "svg", "avif"])
+    public static let maxImage = 25_000_000
 
     public let root: URL
 
@@ -142,6 +151,53 @@ public struct WriterFiles: Sendable {
             let src = a.appendingPathComponent(item)
             if (try? src.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true { continue }
             try FileManager.default.copyItem(at: src, to: b.appendingPathComponent(item))
+        }
+    }
+}
+
+// MARK: Images
+
+extension WriterFiles {
+    /// Saves a pasted or dropped image at `path`, which must be `<Writer>/<Project>/assets/<name>.<ext>`
+    /// with a PNG, JPEG, GIF or WebP extension. The bytes must really be that kind of image, are
+    /// capped at `maxImage`, and an existing file is never overwritten. Written atomically.
+    public func writeImage(_ path: String, data: Data) throws {
+        let url = try resolve(path)
+        let ext = url.pathExtension.lowercased()
+        guard Self.writableImageExtensions.contains(ext) else { throw Failure.notAllowedType(ext) }
+        // Exactly <root>/<project>/assets/<file>: the project folder is a direct child of the root.
+        let assets = url.deletingLastPathComponent()
+        let project = assets.deletingLastPathComponent()
+        guard assets.lastPathComponent == "assets", project.deletingLastPathComponent().path == root.path,
+              !project.lastPathComponent.hasPrefix("."), url.lastPathComponent.first != "." else {
+            throw Failure.badImagePath
+        }
+        guard data.count <= Self.maxImage else { throw Failure.tooBig }
+        guard Self.looksLike(ext, data) else { throw Failure.notAnImage }
+        guard !FileManager.default.fileExists(atPath: url.path) else { throw Failure.alreadyExists }
+        try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+    }
+
+    /// An image inside the Writer folder, for showing in the editor. Images only, size capped.
+    public func readImage(_ path: String) throws -> (data: Data, ext: String) {
+        let url = try resolve(path)
+        let ext = url.pathExtension.lowercased()
+        guard Self.displayableImageExtensions.contains(ext) else { throw Failure.notAllowedType(ext) }
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values?.isRegularFile == true, let size = values?.fileSize else { throw Failure.notFound }
+        guard size <= Self.maxImage else { throw Failure.tooBig }
+        return (try Data(contentsOf: url), ext)
+    }
+
+    static func looksLike(_ ext: String, _ data: Data) -> Bool {
+        let b = [UInt8](data.prefix(12))
+        switch ext {
+        case "png": return b.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        case "jpg", "jpeg": return b.starts(with: [0xFF, 0xD8, 0xFF])
+        case "gif": return b.starts(with: Array("GIF8".utf8))
+        case "webp": return b.count >= 12 && b.starts(with: Array("RIFF".utf8)) && Array(b[8..<12]) == Array("WEBP".utf8)
+        default: return false
         }
     }
 }

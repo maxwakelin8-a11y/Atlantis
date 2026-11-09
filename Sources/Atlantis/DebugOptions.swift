@@ -17,10 +17,17 @@ struct DebugOptions {
     /// `-debugRoundTrip "dir1:dir2"`: load every .md file there into the real editor, check a
     /// no-edit save gives identical bytes, print a summary and quit. Read-only.
     var roundTripDirs: [URL] = []
+    /// `-debugSeqtaSync YES`: run one manual SEQTA sync at launch and log what it saved (counts only).
+    var seqtaSync = false
     /// `-debugHUD YES`: start with the performance HUD showing.
     var showHUD = false
     /// `-debugPageSequence "seqta:15,today:10"`: show each page for that many seconds, in order.
     var pageSequence: [(Page, Double)] = []
+
+    /// `-debugTasksView upcoming`: which Tasks view to open (today, upcoming, project, area, done).
+    var tasksView: TaskListKind?
+    /// `-debugTaskSelect 2`: select the nth task (1-based) of that view, so its side panel shows.
+    var taskSelect: Int?
 
     static func fromArguments(_ defaults: UserDefaults = .standard) -> DebugOptions {
         let args = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
@@ -39,8 +46,11 @@ struct DebugOptions {
         }
         options.networkCheck = (args["debugNetworkCheck"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.seqtaUnloadAfter = (args["debugSeqtaUnloadAfter"] as? String).flatMap(Double.init)
+        options.seqtaSync = (args["debugSeqtaSync"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.roundTripDirs = ((args["debugRoundTrip"] as? String) ?? "")
             .split(separator: ":").map { URL(fileURLWithPath: (String($0) as NSString).expandingTildeInPath) }
+        options.tasksView = (args["debugTasksView"] as? String).flatMap(TaskListKind.init(rawValue:))
+        options.taskSelect = (args["debugTaskSelect"] as? String).flatMap(Int.init)
         options.showHUD = (args["debugHUD"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.pageSequence = ((args["debugPageSequence"] as? String) ?? "")
             .split(separator: ",")

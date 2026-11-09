@@ -1,0 +1,7 @@
+{"status":"200","payload":[
+ {"name":"timetable.subject.colour.ENGG9","value":"#3b82f6"},
+ {"name":"timetable.subject.colour.MATH9","value":"#f97316"},
+ {"name":"timetable.tutor.77","value":"#22c55e"},
+ {"name":"notices.filter.labels","value":"9,12"},
+ {"name":"timetable.subject.colour.BAD","value":"not-a-colour"}
+]}

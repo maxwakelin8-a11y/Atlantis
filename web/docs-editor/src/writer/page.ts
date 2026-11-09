@@ -56,6 +56,9 @@ import {
   type AssessmentInfo,
 } from "./templates";
 import { ICONS, type IconName } from "./icons";
+import { IMAGE_ERROR_EVENT, setImageTarget } from "./images";
+import { groupHits, hitSummary, type SearchGroup } from "./search";
+import type { SearchHit, SearchResult, SearchSnippet } from "./fs";
 import { followTheme } from "./theme";
 import "./page.css";
 
@@ -168,6 +171,13 @@ const iconBtn = (icon: IconName, title: string, onClick: (e: MouseEvent) => void
 
 const fmt = (n: number) => n.toLocaleString("en-AU");
 
+/** `text` with the first (case-insensitive) match of `query` in a <mark>. */
+function highlight(text: string, query: string): Child[] {
+  const at = text.toLowerCase().indexOf(query.toLowerCase());
+  if (at < 0 || !query) return [text];
+  return [text.slice(0, at), h("mark", { text: text.slice(at, at + query.length) }), text.slice(at + query.length)];
+}
+
 function daysUntil(iso?: string): number | null {
   if (!iso || !/^\d{4}-\d\d-\d\d/.test(iso)) return null;
   const due = new Date(`${iso.slice(0, 10)}T00:00:00`);
@@ -247,6 +257,7 @@ export class WriterPage {
     document.addEventListener("keydown", this.onDocKey, true);
     document.addEventListener("visibilitychange", this.onVisible);
     window.addEventListener("beforeunload", this.flushOnUnload);
+    window.addEventListener(IMAGE_ERROR_EVENT, this.onImageError);
   }
 
   async start(): Promise<void> {
@@ -276,6 +287,7 @@ export class WriterPage {
     document.removeEventListener("keydown", this.onDocKey, true);
     document.removeEventListener("visibilitychange", this.onVisible);
     window.removeEventListener("beforeunload", this.flushOnUnload);
+    window.removeEventListener(IMAGE_ERROR_EVENT, this.onImageError);
     this.root.remove();
   }
 
@@ -381,11 +393,14 @@ export class WriterPage {
           h("h1", { text: "Writer" }),
           h("p", { class: "wr-muted", text: "Plan, draft and export your assignments. Everything is saved as Markdown files on your Mac." }),
         ]),
-        h("button", {
-          class: "wr-btn",
-          title: this.dir,
-          on: { click: () => void writerApi.openFile(this.dir, false).catch((e) => this.toast(e)) },
-        }, [h("span", { icon: "finder" }), "Open folder"]),
+        h("div", { class: "wr-home-actions" }, [
+          h("button", { class: "wr-btn", title: "Search every project (⌘⇧F)", on: { click: () => this.openSearchAll() } }, [h("span", { icon: "find" }), "Search"]), // Atlantis
+          h("button", {
+            class: "wr-btn",
+            title: this.dir,
+            on: { click: () => void writerApi.openFile(this.dir, false).catch((e) => this.toast(e)) },
+          }, [h("span", { icon: "finder" }), "Open folder"]),
+        ]),
       ]),
       grid,
       this.projects.length ? null : h("p", { class: "wr-muted wr-home-hint", text: "No projects yet. Start one above, or put a folder of .md files in the Writer folder." }),
@@ -621,12 +636,13 @@ export class WriterPage {
         addBtn,
         iconBtn("trash", "Move to Trash", () => this.selected && void this.trashItem(this.selected)),
         iconBtn("search", "Go to… (⌘O)", () => this.openPalette()),
+        iconBtn("find", "Search all projects (⌘⇧F)", () => this.openSearchAll()), // Atlantis
       ]),
       h("nav", { class: "wr-top-title", attrs: { "data-title": "", "aria-label": "Location" } }),
       h("div", { class: "wr-top-group" }, [views]),
       h("div", { class: "wr-top-group" }, [
         iconBtn("aa", "Editor appearance", (e) => this.appearanceMenu(e)),
-        iconBtn("compose", "Focus mode (⌘⇧F)", () => this.toggleCompose()),
+        iconBtn("compose", "Focus mode (⌘⇧D)", () => this.toggleCompose()), // Atlantis: ⌘⇧F is search across projects now
         h("button", { class: "wr-btn wr-btn-primary wr-export-btn", on: { click: () => this.openExport() } }, [h("span", { icon: "export" }), "Export"]),
         iconBtn("inspector", "Show/hide inspector (⌥⌘I)", () => this.togglePanel("inspector")),
       ]),
@@ -1085,6 +1101,7 @@ export class WriterPage {
   }
 
   private mountEditor(slot: HTMLElement, n: BinderNode, focus: boolean): void {
+    this.pointImagesAt(n.path); // Atlantis: images in this doc resolve from its folder
     const editor = createEditor({
       element: slot,
       markdown: n.body ?? "",
@@ -1096,6 +1113,7 @@ export class WriterPage {
       },
       onFocus: (ed) => {
         this.activeEditor = ed;
+        this.pointImagesAt(n.path); // Atlantis: pasted images go in this doc's project
         this.updateFormatBar();
       },
       onSelection: (ed) => {
@@ -3094,6 +3112,129 @@ export class WriterPage {
     return `${start ? "…" : ""}${text.slice(start, i + q.length + 40).trim()}…`;
   }
 
+  // ── Atlantis: images and search across projects ─────────────────────────────
+  /** Where pasted images go and where relative image links resolve from: the doc at `path`. */
+  private pointImagesAt(path: string): void {
+    const p = this.project;
+    setImageTarget(p && this.dir ? { projectDir: `${this.dir}/${p.id}`, docFile: `${this.dir}/${p.id}/${path}` } : null);
+  }
+
+  private onImageError = (e: Event) => this.toast(new Error((e as CustomEvent<string>).detail));
+
+  /** ⌘⇧F: find text in every project's documents (title and body). Swift reads the files on demand. */
+  openSearchAll(): void {
+    if (this.modal?.classList.contains("is-search-modal")) return void this.modal.querySelector<HTMLInputElement>(".wr-gsearch-input")?.select();
+    const input = h("input", { class: "wr-input wr-palette-input wr-gsearch-input", attrs: { placeholder: "Search all projects…", "aria-label": "Search all projects", type: "search" } });
+    const status = h("div", { class: "wr-gsearch-status wr-faint wr-small", attrs: { role: "status" } });
+    const list = h("div", { class: "wr-palette-list wr-gsearch-list", attrs: { role: "listbox" } });
+    let rows: Array<{ el: HTMLElement; open: () => void }> = [];
+    let index = 0;
+    let seq = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let dirty = false; // typed since the last search
+    const mark = () => {
+      rows.forEach((r, i) => {
+        r.el.classList.toggle("is-active", i === index);
+        r.el.setAttribute("aria-selected", String(i === index));
+      });
+      rows[index]?.el.scrollIntoView({ block: "nearest" });
+    };
+    const show = (query: string, result: SearchResult) => {
+      list.replaceChildren();
+      rows = [];
+      index = 0;
+      const groups = groupHits(result.hits, this.projects);
+      status.textContent = !result.hits.length ? "No matches." : hitSummary(result, groups);
+      for (const g of groups) list.append(...this.searchGroup(g, query, rows, () => this.closeModal()));
+      mark();
+    };
+    const run = async () => {
+      dirty = false;
+      const query = input.value.trim();
+      const mine = ++seq;
+      if (!query) {
+        list.replaceChildren();
+        rows = [];
+        status.textContent = "Searches titles and text in every project.";
+        return;
+      }
+      try {
+        await this.flushAll(); // so what you just typed is found too
+        const result = await writerApi.search(query);
+        if (mine === seq && this.modal?.contains(input)) show(query, result);
+      } catch (err) {
+        if (mine === seq) status.textContent = err instanceof Error ? err.message : String(err);
+      }
+    };
+    input.addEventListener("input", () => {
+      dirty = true;
+      clearTimeout(timer);
+      timer = setTimeout(() => void run(), 150); // runs only when you type; nothing in the background
+    });
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (rows.length) index = (index + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+        mark();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (dirty) {
+          clearTimeout(timer);
+          void run();
+        } else rows[index]?.open();
+      } else if (e.key === "Escape") this.closeModal();
+      else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyF") e.preventDefault();
+    });
+    status.textContent = "Searches titles and text in every project.";
+    this.openModal("", [input, status, list], [], "search");
+    this.modal?.classList.add("is-search-modal");
+    setTimeout(() => input.focus(), 10);
+  }
+
+  private searchGroup(g: SearchGroup, query: string, rows: Array<{ el: HTMLElement; open: () => void }>, close: () => void): HTMLElement[] {
+    const out: HTMLElement[] = [h("div", { class: "wr-palette-group", text: g.title })];
+    for (const hit of g.hits) {
+      const open = (snippet?: SearchSnippet) => {
+        close();
+        void this.openSearchHit(hit, query, snippet);
+      };
+      const el = h("button", { class: "wr-gsearch-hit", attrs: { role: "option", "aria-selected": "false" }, on: { click: () => open(hit.snippets[0]) } }, [
+        h("span", { class: "wr-gsearch-title" }, [
+          h("span", { class: "wr-palette-icon", icon: "docText" }),
+          h("span", { class: "wr-menu-label" }, hit.titleMatches ? highlight(hit.title, query) : [hit.title]),
+          h("span", { class: "wr-faint wr-small", text: hit.count > 1 ? `${hit.count} matches` : hit.folder }),
+        ]),
+        ...hit.snippets.map((s) =>
+          h("span", { class: "wr-gsearch-snippet", on: { click: (ev) => { ev.stopPropagation(); open(s); } } }, [s.before, h("mark", { text: s.match }), s.after]),
+        ),
+      ]);
+      el.addEventListener("mousemove", () => {
+        const at = rows.findIndex((r) => r.el === el);
+        if (at >= 0 && !el.classList.contains("is-active")) {
+          rows.forEach((r) => r.el.classList.toggle("is-active", r.el === el));
+        }
+      });
+      rows.push({ el, open: () => open(hit.snippets[0]) });
+      out.push(el);
+    }
+    return out;
+  }
+
+  /** Opens the project and doc a search result is in and jumps to the match with the find bar. */
+  private async openSearchHit(hit: SearchHit, query: string, snippet?: SearchSnippet): Promise<void> {
+    if (this.project?.id !== hit.project) await this.openProject(hit.project);
+    const p = this.project;
+    if (!p || p.id !== hit.project) return;
+    if (!findNode(p.tree, hit.relPath)) return this.toast(new Error("That document isn't in the project any more."));
+    this.select(hit.relPath);
+    if (this.viewFor(this.node) !== "doc") this.setView("doc");
+    if (!hit.count || !snippet) return; // matched the title only
+    this.openFind(false, query);
+    this.find.index = snippet.occurrence;
+    this.refreshFind(true);
+  }
+
   // ── Find & replace ───────────────────────────────────────────────────────
   private openFind(replace = false, query?: string): void {
     if (this.viewFor(this.node) !== "doc") {
@@ -3662,7 +3803,8 @@ export class WriterPage {
       { label: "Find in document", sub: "⌘F", icon: "find", kind: "cmd", run: () => this.openFind(false) },
       { label: "Find and replace", sub: "⌥⌘F", icon: "find", kind: "cmd", run: () => this.openFind(true) },
       { label: "Export…", sub: "⌘⇧E", icon: "export", kind: "cmd", run: () => this.openExport() },
-      { label: "Focus mode", sub: "⌘⇧F", icon: "compose", kind: "cmd", run: () => this.toggleCompose() },
+      { label: "Search all projects", sub: "⌘⇧F", icon: "find", kind: "cmd", run: () => this.openSearchAll() },
+      { label: "Focus mode", sub: "⌘⇧D", icon: "compose", kind: "cmd", run: () => this.toggleCompose() },
       { label: "Make a reference from a link", sub: "⌥⌘R", icon: "cite", kind: "cmd", run: () => this.openReferences() },
       { label: "Comment on selection", sub: "⌥⌘M", icon: "comment", kind: "cmd", run: () => this.addComment() },
       { label: this.prefs.review ? "Stop highlighting long sentences & filler" : "Check writing: long sentences & filler words", sub: "", icon: "sparkle", kind: "cmd", run: () => this.toggleReview() },
@@ -3747,8 +3889,8 @@ export class WriterPage {
   private openShortcuts(): void {
     const groups: Array<[string, Array<[string, string]>]> = [
       ["Writing", [["Bold · Italic", "⌘B · ⌘I"], ["Highlight", "⌘⇧H"], ["Link", "⌘K"], ["Comment on selection", "⌥⌘M"], ["Reference from a link", "⌥⌘R or /ref"], ["Insert anything", "/ on a new line"], ["Heading", "## then space"], ["Bulleted · numbered list", "- · 1. then space"], ["Checklist", "[ ] then space"], ["Quote", "> then space"], ["Undo · Redo", "⌘Z · ⇧⌘Z"]]],
-      ["Finding", [["Go to anything", "⌘O"], ["Find", "⌘F"], ["Find and replace", "⌥⌘F"], ["Next · previous match", "↵ · ⇧↵"], ["Search the project", "⌘⇧O"]]],
-      ["Project", [["New document", "⌥⌘N"], ["Write · Cards · Outline", "⌃1 · ⌃2 · ⌃3"], ["Back · Forward", "⌘[ · ⌘]"], ["Binder · Inspector", "⌥⌘1 · ⌥⌘I"], ["Focus mode", "⌘⇧F"], ["Export", "⌘⇧E"], ["Save now", "⌘S"], ["Rename in binder", "↵"]]],
+      ["Finding", [["Go to anything", "⌘O"], ["Find", "⌘F"], ["Find and replace", "⌥⌘F"], ["Next · previous match", "↵ · ⇧↵"], ["Search the project", "⌘⇧O"], ["Search all projects", "⌘⇧F"]]],
+      ["Project", [["New document", "⌥⌘N"], ["Write · Cards · Outline", "⌃1 · ⌃2 · ⌃3"], ["Back · Forward", "⌘[ · ⌘]"], ["Binder · Inspector", "⌥⌘1 · ⌥⌘I"], ["Focus mode", "⌘⇧D"], ["Export", "⌘⇧E"], ["Save now", "⌘S"], ["Rename in binder", "↵"]]],
     ];
     this.openModal("Keyboard shortcuts", [
       h("div", { class: "wr-keys" }, groups.map(([title, rows]) =>
@@ -3770,16 +3912,18 @@ export class WriterPage {
       if (this.root.classList.contains("is-compose")) return this.toggleCompose();
       if (this.root.matches(".drawer-binder, .drawer-inspector")) return this.root.classList.remove("drawer-binder", "drawer-inspector");
     }
-    if (!this.project) return;
     const k = e.key.toLowerCase();
     const run = (fn: () => void) => {
       e.preventDefault();
       e.stopPropagation();
       fn();
     };
+    // Atlantis: search across all projects (⌘⇧F), also from the project list; Focus mode moved to ⌘⇧D.
+    if (mod && e.shiftKey && !e.altKey && e.code === "KeyF") return run(() => this.openSearchAll());
+    if (!this.project) return;
     if (mod && !e.altKey && !e.shiftKey && k === "f") return run(() => this.openFind(false));
     if (mod && e.altKey && e.code === "KeyF") return run(() => this.openFind(true));
-    if (mod && e.shiftKey && e.code === "KeyF") return run(() => this.toggleCompose());
+    if (mod && e.shiftKey && !e.altKey && e.code === "KeyD") return run(() => this.toggleCompose());
     if (mod && !e.shiftKey && k === "o") return run(() => this.openPalette());
     if (mod && e.shiftKey && e.code === "KeyO") return run(() => this.focusSearch());
     if (mod && e.shiftKey && e.code === "KeyP") return run(() => this.openPalette());
