@@ -18,6 +18,8 @@ Format: `- [ ] [bug|polish|perf] what happened · where · YYYY-MM-DD`
 
 - [ ] [polish] File chooser (copied from seqta-app) uses raw spacing and colours; move to tokens when the design system lands · SEQTA · 2026-11-06
 
+- [ ] [polish] Haiku 5.5 helpers stop before doing any work in this repo ("context refilled too quickly after compaction", twice); use Sonnet/Opus helpers here · Tooling · 2026-11-09
+
 ## Fixed
 
 - [x] [bug] Docs editor text and menus were in Chinese (GenOffice defaults to zh) → English now · Docs · 2026-11-07
