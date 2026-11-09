@@ -41,6 +41,17 @@ final class AppModel {
         return controller
     }
 
+    /// Created the first time Tasks is shown (or anything else needs tasks); then it watches
+    /// `machine/tasks.md` for edits made elsewhere.
+    private(set) var tasksIfStarted: TaskStore?
+
+    var tasks: TaskStore {
+        if let tasksIfStarted { return tasksIfStarted }
+        let store = TaskStore(vault: VaultPaths(root: AppSettings.vaultURL))
+        tasksIfStarted = store
+        return store
+    }
+
     /// The local MCP server agents talk to (PRD §8). Started at launch, stopped at quit.
     let mcp = MCPService()
 
