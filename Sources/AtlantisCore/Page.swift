@@ -43,8 +43,9 @@ public enum Page: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Settings sits at the bottom of the sidebar and uses ⌘, instead of a number.
-    public var isPinnedToBottom: Bool { self == .settings }
+    /// The bottom group of the sidebar: the temporary SEQTA tab (PRD §7d) and Settings (⌘,).
+    /// Neither takes a ⌘-number.
+    public var isPinnedToBottom: Bool { self == .settings || self == .seqta }
 
     /// Pages in the main sidebar list, in order.
     public static var main: [Page] { allCases.filter { !$0.isPinnedToBottom } }

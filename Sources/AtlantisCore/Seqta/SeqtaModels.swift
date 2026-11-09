@@ -130,11 +130,14 @@ public struct MessageSummary: Codable, Sendable, Equatable, Identifiable {
     public var subject: String
     public var read: Bool
     public var attachmentCount: Int
+    /// The sender's SEQTA id, so a reply can address them. Nil in lists cached before M4b.
+    public var senderID: Int?
 
     public init(id: Int, date: Date? = nil, sender: String, senderType: String = "", subject: String,
-                read: Bool = false, attachmentCount: Int = 0) {
+                read: Bool = false, attachmentCount: Int = 0, senderID: Int? = nil) {
         self.id = id; self.date = date; self.sender = sender; self.senderType = senderType
         self.subject = subject; self.read = read; self.attachmentCount = attachmentCount
+        self.senderID = senderID
     }
 }
 
@@ -161,4 +164,42 @@ public struct Message: Codable, Sendable, Equatable, Identifiable {
     public init(summary: MessageSummary, recipients: [String] = [], body: String = "", files: [MessageFile] = []) {
         self.summary = summary; self.recipients = recipients; self.body = body; self.files = files
     }
+}
+
+/// A downloadable file from a subject's course page: the course outline's files and the
+/// resources teachers attach to lessons. Only the list is synced; the file itself is downloaded
+/// when the user opens it (`SeqtaFileCache`).
+public struct SubjectFile: Codable, Sendable, Equatable, Identifiable {
+    public var id: String { "\(subjectCode):\(uuid)" }
+    public var subjectCode: String
+    public var name: String
+    public var uuid: String
+    public var mimetype: String?
+    /// Bytes, when SEQTA says.
+    public var size: Int?
+    /// "Course outline" or "Lesson 2026-11-09 · Persuasive writing".
+    public var source: String
+
+    public init(subjectCode: String, name: String, uuid: String, mimetype: String? = nil, size: Int? = nil, source: String) {
+        self.subjectCode = subjectCode; self.name = name; self.uuid = uuid
+        self.mimetype = mimetype; self.size = size; self.source = source
+    }
+}
+
+/// A person a message can be addressed to (from SEQTA's people lists).
+public struct SeqtaPerson: Codable, Sendable, Equatable, Identifiable, Hashable {
+    public enum Kind: String, Codable, Sendable { case staff, student }
+
+    public var id: Int
+    public var kind: Kind
+    public var name: String
+    /// "Year 9 · Roll 9A" for students, empty for staff.
+    public var detail: String
+
+    public init(id: Int, kind: Kind, name: String, detail: String = "") {
+        self.id = id; self.kind = kind; self.name = name; self.detail = detail
+    }
+
+    /// Unique across the two lists, since staff and students can share a number.
+    public var key: String { "\(kind.rawValue):\(id)" }
 }

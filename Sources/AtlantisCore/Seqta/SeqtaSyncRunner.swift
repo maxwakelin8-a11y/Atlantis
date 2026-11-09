@@ -144,17 +144,19 @@ public struct SeqtaSyncRunner: Sendable {
         for subject in previousSubjects where !subject.teacher.isEmpty && teachers[subject.code] == nil { teachers[subject.code] = subject.teacher }
         let subjects = subjectsPayload.map { SeqtaDecoding.subjects($0, colours: colours, teachers: teachers) }
 
-        // 3. Per-subject calls: lesson content for the lessons we have, past assessments for
-        // each active subject.
+        // 3. Per-subject calls: the course page of every lesson's class and every subject (lesson
+        // content and the file list), past assessments for each active subject.
         var courseRequests: [SeqtaRequest] = []
         var courseKeys: [String] = []
-        for lesson in lessons ?? [] {
-            guard let programme = lesson.programme, let metaclass = lesson.metaclass, programme > 0, metaclass > 0,
-                  !courseKeys.contains("\(programme):\(metaclass)") else { continue }
+        func addCourse(programme: Int?, metaclass: Int?) {
+            guard let programme, let metaclass, programme > 0, metaclass > 0,
+                  !courseKeys.contains("\(programme):\(metaclass)") else { return }
             courseKeys.append("\(programme):\(metaclass)")
             courseRequests.append(SeqtaRequest(path: "/seqta/student/load/courses",
                                                body: ["programme": String(programme), "metaclass": String(metaclass)]))
         }
+        for lesson in lessons ?? [] { addCourse(programme: lesson.programme, metaclass: lesson.metaclass) }
+        for subject in subjects ?? [] { addCourse(programme: subject.programme, metaclass: subject.metaclass) }
         let pastSubjects = subjects ?? []
         let pastRequests = pastSubjects.map {
             SeqtaRequest(path: "/seqta/student/assessment/list/past?",
@@ -165,13 +167,16 @@ public struct SeqtaSyncRunner: Sendable {
             if response.status == 401 || response.status == 403 { throw SeqtaSyncError.notSignedIn }
         }
 
+        var content: [String: SeqtaCourseLesson] = [:] // "programme:metaclass|date|from"
+        var courseFiles: [SubjectFile] = []
+        var failedCourses = 0
+        let codeByCourse = Dictionary((subjects ?? []).map { ("\($0.programme):\($0.metaclass)", $0.code) }, uniquingKeysWith: { first, _ in first })
+        for (index, key) in courseKeys.enumerated() {
+            guard let payload = try? SeqtaEnvelope.payload(second[index]) else { failedCourses += 1; continue }
+            for slot in SeqtaDecoding.courseLessons(payload) { content["\(key)|\(slot.date)|\(slot.start)"] = slot }
+            if let code = codeByCourse[key] { courseFiles += SeqtaDecoding.courseFiles(payload, subjectCode: code) }
+        }
         if lessons != nil {
-            var content: [String: SeqtaCourseLesson] = [:] // "programme:metaclass|date|from"
-            var failedCourses = 0
-            for (index, key) in courseKeys.enumerated() {
-                guard let payload = try? SeqtaEnvelope.payload(second[index]) else { failedCourses += 1; continue }
-                for slot in SeqtaDecoding.courseLessons(payload) { content["\(key)|\(slot.date)|\(slot.start)"] = slot }
-            }
             lessons = lessons?.map { lesson in
                 var lesson = lesson
                 guard let programme = lesson.programme, let metaclass = lesson.metaclass,
@@ -180,8 +185,10 @@ public struct SeqtaSyncRunner: Sendable {
                 lesson.homework = slot.homework
                 return lesson
             }
-            if failedCourses > 0 { report.failures["lessonContent"] = "\(failedCourses) of \(courseKeys.count) courses didn't load" }
         }
+        if failedCourses > 0 { report.failures["lessonContent"] = "\(failedCourses) of \(courseKeys.count) courses didn't load" }
+        // The file list is replaced only when every course loaded, so a bad day never empties it.
+        let files: [SubjectFile]? = subjects != nil && failedCourses == 0 ? courseFiles : nil
 
         // 4. Assessments: upcoming + recent past, merged, then details where they changed.
         var assessments: [Assessment]?
@@ -276,6 +283,7 @@ public struct SeqtaSyncRunner: Sendable {
         try save(notices, .notices)
         try save(subjects, .subjects)
         try save(messages, .messages)
+        try save(files, .files)
         report.counts = counts
         if counts.isEmpty { throw SeqtaSyncError.nothingSynced(report.failures) }
 

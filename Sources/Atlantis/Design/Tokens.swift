@@ -73,3 +73,14 @@ enum Motion {
     static let quick = Animation.easeOut(duration: 0.15)
     static let standard = Animation.easeInOut(duration: 0.25)
 }
+
+extension Palette {
+    /// A subject's colour from SEQTA's `#rrggbb` (or `rrggbb`); the fallback grey when it's missing or unreadable.
+    static func subject(_ hex: String?) -> Color {
+        guard var text = hex?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return subjectFallback }
+        if text.hasPrefix("#") { text.removeFirst() }
+        guard text.count == 6, let value = UInt32(text, radix: 16) else { return subjectFallback }
+        return Color(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
+                     blue: Double(value & 0xFF) / 255)
+    }
+}

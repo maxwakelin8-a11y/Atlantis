@@ -6,7 +6,8 @@ import os
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let debug = DebugOptions.fromArguments()
     private lazy var model: AppModel = {
-        let model = AppModel(page: debug.page)
+        let model = AppModel(page: debug.page, seqtaCache: debug.seqtaCache.map { SeqtaCache(root: $0) } ?? SeqtaCache())
+        if let code = debug.subject { model.subjectCode = code }
         if let seconds = debug.seqtaUnloadAfter { model.seqtaUnloadAfter = .seconds(seconds) }
         return model
     }()
@@ -43,7 +44,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         // Once-a-day sync at launch, and again on wake if today's hasn't run (no timers).
         // After the first frame, so launch stays fast.
-        DispatchQueue.main.async { [model] in model.seqtaSync.startAutoSync() }
+        // (Not with a debug cache: screenshots use made-up data and must not reach SEQTA.)
+        if debug.seqtaCache == nil { DispatchQueue.main.async { [model] in model.seqtaSync.startAutoSync() } }
+        if let id = debug.message { model.messages.select(id) }
+        if debug.compose {
+            model.messages.startCompose(MessageDraft(subject: "Excursion form", body: "Hi Ms Example,\n\nCould I hand the form in on Friday instead?\n\nThanks",
+                                                     toNames: ["Ms Example"]), inboxItemID: nil)
+        }
         if debug.showHUD { model.showsHUD = true }
         if let probe = ProcessInfo.processInfo.environment["ATLANTIS_DOCS_PROBE"] {
             // Debug: run JS in the Docs page after it loads, print the result (and a snapshot).

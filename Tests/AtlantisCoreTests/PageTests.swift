@@ -7,9 +7,10 @@ import Testing
         #expect(numbers == (1...Page.main.count).map(String.init))
     }
 
-    @Test func settingsIsPinnedAndHasNoNumber() {
-        #expect(Page.bottom == [.settings])
-        #expect(Page.settings.shortcutNumber == nil)
+    @Test func seqtaAndSettingsAreInTheBottomGroupWithoutNumbers() {
+        #expect(Page.bottom == [.seqta, .settings])
+        #expect(Page.settings.shortcutNumber == nil && Page.seqta.shortcutNumber == nil)
+        #expect(!Page.main.contains(.seqta))
     }
 
     @Test func todayComesFirst() {

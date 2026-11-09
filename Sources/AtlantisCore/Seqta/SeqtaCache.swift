@@ -50,7 +50,7 @@ public struct SeqtaCache: Sendable {
     public static let schemaVersion = 1
 
     public enum Kind: String, CaseIterable, Sendable {
-        case lessons, assessments, notices, subjects, messages
+        case lessons, assessments, notices, subjects, messages, files
         public var fileName: String { "\(rawValue).json" }
     }
 
@@ -75,6 +75,7 @@ public struct SeqtaCache: Sendable {
     public func notices() -> CachedList<Notice>? { load(.notices) }
     public func subjects() -> CachedList<Subject>? { load(.subjects) }
     public func messages() -> CachedList<MessageSummary>? { load(.messages) }
+    public func files() -> CachedList<SubjectFile>? { load(.files) }
 
     /// Missing or unreadable meta is just "never synced".
     public func meta() -> SeqtaMeta {
@@ -102,17 +103,39 @@ public struct SeqtaCache: Sendable {
         try saveMeta(meta)
     }
 
+    // MARK: Message bodies
+
+    /// Whole messages are read on demand (one request each) and kept here, so reading one twice
+    /// costs nothing. One small file per message.
+    private var bodiesURL: URL { root.appendingPathComponent("message-bodies", isDirectory: true) }
+    private func bodyURL(_ id: Int) -> URL { bodiesURL.appendingPathComponent("\(id).json") }
+
+    public func message(id: Int) -> Message? {
+        guard let data = try? Data(contentsOf: bodyURL(id)) else { return nil }
+        return try? Self.decoder.decode(Message.self, from: data)
+    }
+
+    public func saveMessage(_ message: Message) throws {
+        try write(Self.encoder.encode(message), to: bodyURL(message.id))
+    }
+
+    /// Whether this message's body has been opened (and so cached) on this Mac.
+    public func hasMessage(id: Int) -> Bool { FileManager.default.fileExists(atPath: bodyURL(id).path) }
+
     /// Deletes every cache file (the cache is rebuildable).
     public func clear() throws {
         for kind in Kind.allCases { try? FileManager.default.removeItem(at: url(kind)) }
         try? FileManager.default.removeItem(at: metaURL)
+        try? FileManager.default.removeItem(at: bodiesURL)
     }
 
     /// Atomic write; the files hold schoolwork and names, so they're private to the user.
     private func write(_ data: Data, to url: URL) throws {
         if let existing = try? Data(contentsOf: url), existing == data { return }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
-                                                attributes: [.posixPermissions: 0o700])
+        for dir in [root, url.deletingLastPathComponent()] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+        }
         try data.write(to: url, options: .atomic)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }

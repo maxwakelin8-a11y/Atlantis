@@ -16,6 +16,16 @@ public struct SeqtaCourseLesson: Sendable, Equatable {
     public var topic: String?
     public var homework: String?
     public var plan: String?
+    /// Resources the teacher attached to this lesson.
+    public var files: [SeqtaFileRef] = []
+}
+
+/// A file entry as SEQTA lists it, before it's tied to a subject.
+public struct SeqtaFileRef: Sendable, Equatable {
+    public var name: String
+    public var uuid: String
+    public var mimetype: String?
+    public var size: Int?
 }
 
 /// Pure decoding of SEQTA's raw `payload` values into Atlantis's models. Every reader is
@@ -87,10 +97,55 @@ public enum SeqtaDecoding {
                     period: slot.string("p"),
                     topic: nonEmpty(HTMLText.plain(lesson.string("t"))),
                     homework: nonEmpty(HTMLText.plain(lesson.string("h"))),
-                    plan: nonEmpty(HTMLText.plain(lesson.string("l")))))
+                    plan: nonEmpty(HTMLText.plain(lesson.string("l"))),
+                    files: fileRefs(lesson.objects("r"))))
             }
         }
         return out
+    }
+
+    /// Files in a course page: the outline's (`cf`) first, then each lesson's resources, once each.
+    public static func courseFiles(_ payload: Any, subjectCode: String) -> [SubjectFile] {
+        guard let course = payload as? JSONObject else { return [] }
+        var seen = Set<String>()
+        var out: [SubjectFile] = []
+        func add(_ refs: [SeqtaFileRef], source: String) {
+            for ref in refs where seen.insert(ref.uuid.lowercased()).inserted {
+                out.append(SubjectFile(subjectCode: subjectCode, name: ref.name, uuid: ref.uuid,
+                                       mimetype: ref.mimetype, size: ref.size, source: source))
+            }
+        }
+        add(fileRefs(course.objects("cf")), source: "Course outline")
+        for lesson in courseLessons(payload) where !lesson.files.isEmpty {
+            add(lesson.files, source: "Lesson \(lesson.date)" + (lesson.topic.map { " · \($0)" } ?? ""))
+        }
+        return out
+    }
+
+    /// Entries with a uuid (the only way to download them); the name falls back to the title.
+    static func fileRefs(_ raw: [JSONObject]) -> [SeqtaFileRef] {
+        raw.compactMap { file in
+            guard let uuid = file.string("uuid") else { return nil }
+            return SeqtaFileRef(name: file.string("filename", "name", "t", "title") ?? uuid, uuid: uuid,
+                                mimetype: file.string("mimetype"), size: file.int("size"))
+        }
+    }
+
+    // MARK: People
+
+    /// `/seqta/student/load/message/people` (`mode: "staff"` or `"student"`) → people, by name.
+    public static func people(_ payload: Any, kind: SeqtaPerson.Kind) -> [SeqtaPerson] {
+        let list = (payload as? [Any])?.objects ?? (payload as? JSONObject)?.objects("people") ?? []
+        let people: [SeqtaPerson] = list.compactMap { raw in
+            guard let id = raw.int("id") else { return nil }
+            let first = raw.string("prefname", "firstname")
+            let name = raw.string("xx_display") ?? [first, raw.string("surname")].compactMap { $0 }.joined(separator: " ")
+            guard !name.isEmpty else { return nil }
+            let detail = [raw.string("year").map { "Year \($0)" }, raw.string("rollgroup").map { "Roll \($0)" }]
+                .compactMap { $0 }.joined(separator: " · ")
+            return SeqtaPerson(id: id, kind: kind, name: name, detail: detail)
+        }
+        return people.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     // MARK: Subjects
@@ -213,7 +268,8 @@ public enum SeqtaDecoding {
         let attachments = raw.int("attachmentCount") ?? ((raw.bool("attachments") ?? false) ? 1 : 0)
         return MessageSummary(id: id, date: raw.string("date").flatMap { date($0, defaultTimeZone: timeZone) },
                               sender: raw.string("sender") ?? "", senderType: raw.string("sender_type") ?? "",
-                              subject: subject, read: raw.bool("read") ?? false, attachmentCount: attachments)
+                              subject: subject, read: raw.bool("read") ?? false, attachmentCount: attachments,
+                              senderID: raw.int("sender_id", "senderID"))
     }
 
     // MARK: Helpers
