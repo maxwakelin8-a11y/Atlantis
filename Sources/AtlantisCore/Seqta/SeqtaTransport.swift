@@ -52,6 +52,9 @@ public struct SeqtaRequest: Sendable, Equatable {
             return ["list", "message"].contains(object?.string("action") ?? "")
         case "/seqta/student/login":
             return object?.string("mode") == "normal"
+        case "/seqta/student/load/message/people":
+            // The recipient lists the compose view searches. Reading names only.
+            return ["staff", "student"].contains(object?.string("mode") ?? "")
         case "/seqta/student/load/timetable", "/seqta/student/load/notices", "/seqta/student/load/subjects",
              "/seqta/student/load/courses", "/seqta/student/load/prefs",
              "/seqta/student/assessment/list/upcoming", "/seqta/student/assessment/list/past",
@@ -82,8 +85,52 @@ public protocol SeqtaTransport: Sendable {
     func open() async throws
     /// Sends the requests (in parallel, a few at a time) and returns the answers in order.
     func send(_ requests: [SeqtaRequest]) async throws -> [SeqtaResponse]
+    /// Downloads one file (a read-only GET, see `SeqtaFileRequest`). Transports that can't
+    /// download say so.
+    func download(_ request: SeqtaFileRequest) async throws -> SeqtaFileResponse
     /// Unloads everything. Always called, also after an error.
     func close() async
+}
+
+extension SeqtaTransport {
+    public func download(_ request: SeqtaFileRequest) async throws -> SeqtaFileResponse {
+        throw SeqtaSyncError.network("this connection can't download files")
+    }
+}
+
+/// One file download: `GET /seqta/student/load/file?type=…&file=<uuid>`. Read-only, like the
+/// allow-listed POSTs, but a different verb, so it has its own type and checks.
+public struct SeqtaFileRequest: Sendable, Equatable {
+    public enum Source: String, Sendable {
+        /// Course, lesson and assessment files.
+        case resource
+        /// Message attachments.
+        case message
+    }
+
+    public let source: Source
+    public let uuid: String
+
+    /// Nil unless `uuid` is a real UUID (so nothing else can be smuggled into the path).
+    public init?(source: Source, uuid: String) {
+        guard uuid.range(of: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#,
+                         options: .regularExpression) != nil else { return nil }
+        self.source = source
+        self.uuid = uuid.lowercased()
+    }
+
+    public var path: String { "/seqta/student/load/file?type=\(source.rawValue)&file=\(uuid)" }
+}
+
+public struct SeqtaFileResponse: Sendable, Equatable {
+    public let status: Int
+    public let data: Data
+    /// The `Content-Disposition` header, which usually carries the real file name.
+    public let disposition: String
+
+    public init(status: Int, data: Data, disposition: String = "") {
+        self.status = status; self.data = data; self.disposition = disposition
+    }
 }
 
 /// SEQTA wraps every answer as `{"payload": …, "status": "200"}`.

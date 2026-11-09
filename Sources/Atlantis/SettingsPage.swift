@@ -8,6 +8,7 @@ struct SettingsPage: View {
     @State private var savedAddress = false
     @State private var writerPath = AppSettings.writerURL.path
     @State private var author = AppSettings.authorName
+    @AppStorage(AppSettings.showSeqtaTabKey) private var showSeqtaTab = true
 
     var body: some View {
         Form {
@@ -30,6 +31,14 @@ struct SettingsPage: View {
             }
 
             SeqtaSyncSection(model: model)
+
+            Section {
+                Toggle("Show SEQTA tab", isOn: $showSeqtaTab)
+            } header: {
+                Text("Sidebar")
+            } footer: {
+                Text("The SEQTA web tab is temporary. Today, Tasks, Subjects and Messages are meant to replace it; turn it off once they cover your school day.")
+            }
 
             Section {
                 LabeledContent("Folder") {

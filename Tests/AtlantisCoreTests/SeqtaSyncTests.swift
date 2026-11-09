@@ -25,6 +25,15 @@ final class FakeSeqta: SeqtaTransport, @unchecked Sendable {
 
     func close() async { lock.withLock { _closed += 1 } }
 
+    private var _downloads: [SeqtaFileRequest] = []
+    var downloads: [SeqtaFileRequest] { lock.withLock { _downloads } }
+    var fileAnswer = SeqtaFileResponse(status: 200, data: Data("made-up file".utf8), disposition: #"attachment; filename="Sheet.pdf""#)
+
+    func download(_ request: SeqtaFileRequest) async throws -> SeqtaFileResponse {
+        lock.withLock { _downloads.append(request) }
+        return fileAnswer
+    }
+
     func send(_ requests: [SeqtaRequest]) async throws -> [SeqtaResponse] {
         lock.withLock { _requests += requests }
         return requests.map(answer)
@@ -42,7 +51,13 @@ final class FakeSeqta: SeqtaTransport, @unchecked Sendable {
         case "/seqta/student/load/timetable": return SeqtaFixture.response("timetable")
         case "/seqta/student/load/notices": return SeqtaFixture.response("notices")
         case "/seqta/student/assessment/list/upcoming": return SeqtaFixture.response("upcoming")
-        case "/seqta/student/load/message": return SeqtaFixture.response("messages")
+        case "/seqta/student/load/message":
+            if body["action"] as? String == "message" {
+                return body["id"] as? Int == 8101 ? SeqtaFixture.response("message-8101") : SeqtaResponse(status: 404, body: "")
+            }
+            return SeqtaFixture.response("messages")
+        case "/seqta/student/load/message/people":
+            return SeqtaFixture.response(body["mode"] as? String == "student" ? "people-student" : "people-staff")
         case "/seqta/student/load/courses":
             return body["programme"] as? String == "3830" ? SeqtaFixture.response("course-english")
                 : body["programme"] as? String == "3831" ? SeqtaFixture.response("course-maths") : empty
@@ -84,11 +99,11 @@ final class FakeSeqta: SeqtaTransport, @unchecked Sendable {
         defer { try? FileManager.default.removeItem(at: dir) }
 
         #expect(report.failures.isEmpty)
-        #expect(report.counts == ["lessons": 4, "assessments": 5, "notices": 2, "subjects": 2, "messages": 2])
+        #expect(report.counts == ["lessons": 4, "assessments": 5, "notices": 2, "subjects": 2, "messages": 2, "files": 2])
         #expect(report.newMarkAssessmentIDs.isEmpty) // first sync: nothing to compare with
         #expect(seqta.opened == 1 && seqta.closed == 1)
         #expect(seqta.requests.allSatisfy { $0.isAllowed })
-        #expect(report.summary == "lessons 4, assessments 5, notices 2, subjects 2, messages 2")
+        #expect(report.summary == "lessons 4, assessments 5, notices 2, subjects 2, messages 2, files 2")
 
         let lessons = try #require(cache.lessons()).items
         #expect(lessons.map(\.id) == ["2026-11-09T08:30-TUT", "2026-11-09T09:00-ENGG9", "2026-11-09T09:55-MATH9", "2026-11-10T09:00-ENGG9"])

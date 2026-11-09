@@ -40,6 +40,41 @@ final class AppModel {
 
     private var vault: VaultPaths { VaultPaths(root: AppSettings.vaultURL) }
 
+    /// The SEQTA cache as the Subjects and Messages pages read it.
+    let seqtaData: SeqtaData
+
+    /// The subject whose page shows under Subjects (nil: the overview of all subjects).
+    var subjectCode: String?
+
+    /// Created the first time Messages is shown or something opens a draft in it.
+    @ObservationIgnored private var messagesStorage: MessagesModel?
+
+    var messages: MessagesModel {
+        if let messagesStorage { return messagesStorage }
+        let model = MessagesModel(sync: seqtaSync, data: seqtaData)
+        model.onDraftSent = { [weak self] inboxID in
+            guard let self, let inboxID else { return }
+            Task { try? await self.inbox.accept(id: inboxID) }
+        }
+        messagesStorage = model
+        return model
+    }
+
+    /// Opens an agent's `message.draft` in the Messages compose view. It still needs Send + confirm.
+    func openDraftInMessages(_ item: InboxItem) {
+        messages.startCompose(MessageDraft(inbox: item), inboxItemID: item.id)
+        page = .messages
+    }
+
+    /// Shows a SEQTA page in the pop-up window ("Open in SEQTA").
+    func openInSeqta(_ url: URL?) {
+        guard let url else { return }
+        seqta.openInPopup(url)
+    }
+
+    /// The SEQTA address's page for `make`, for the buttons that open SEQTA.
+    func seqtaPage(_ make: (URL) -> URL?) -> URL? { AppSettings.seqtaURL.flatMap(make) }
+
     /// Created the first time Docs is shown, then kept warm (the one warm Docs editor, PRD §17).
     private(set) var docsIfStarted: DocsController?
 
@@ -97,6 +132,7 @@ final class AppModel {
         self.page = page ?? saved ?? .today
         self.clockOffset = clockOffset
         seqtaSync = SeqtaSync(cache: seqtaCache)
+        seqtaData = SeqtaData(cache: seqtaCache)
         today = TodayStore(cache: seqtaCache, vault: VaultPaths(root: AppSettings.vaultURL), planURL: planURL,
                            now: { Date().addingTimeInterval(clockOffset) })
         seqtaSync.onSynced = { [weak self] _ in await self?.didSync() }
@@ -133,6 +169,7 @@ final class AppModel {
 
     private func didSync() async {
         today.reloadCache()
+        seqtaData.reload()
         today.writeDailyNote(syncedAt: seqtaSync.lastSync ?? now())
         await proposeFromSeqta()
     }

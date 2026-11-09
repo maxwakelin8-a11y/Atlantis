@@ -50,6 +50,8 @@ public enum AppSupport {
     }
     /// SEQTA sync cache (PRD §7d).
     public static var seqtaCache: URL { root.appendingPathComponent("seqta", isDirectory: true) }
+    /// Files downloaded from SEQTA when the user opens them (course files, message attachments).
+    public static var seqtaFiles: URL { root.appendingPathComponent("seqta-files", isDirectory: true) }
     /// Unix sockets for the MCP helper and agents (0600, peer-UID checked).
     public static var sockets: URL { root.appendingPathComponent("run", isDirectory: true) }
 }

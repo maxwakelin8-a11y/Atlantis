@@ -97,3 +97,4 @@ enum Motion {
     static let quick = Animation.easeOut(duration: 0.15)
     static let standard = Animation.easeInOut(duration: 0.25)
 }
+

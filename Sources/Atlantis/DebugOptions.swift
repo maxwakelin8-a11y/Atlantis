@@ -19,6 +19,15 @@ struct DebugOptions {
     var roundTripDirs: [URL] = []
     /// `-debugSeqtaSync YES`: run one manual SEQTA sync at launch and log what it saved (counts only).
     var seqtaSync = false
+    /// `-debugSeqtaCache /path`: read (and write) the SEQTA cache there instead of Application
+    /// Support, and skip the automatic sync, so screenshots use made-up data.
+    var seqtaCache: URL?
+    /// `-debugSubject ENGG9`: open the Subjects page on that subject.
+    var subject: String?
+    /// `-debugMessage 8101`: open the Messages page on that message.
+    var message: Int?
+    /// `-debugCompose YES`: open the Messages compose view with a made-up draft.
+    var compose = false
     /// `-debugHUD YES`: start with the performance HUD showing.
     var showHUD = false
     /// `-debugPageSequence "seqta:15,today:10"`: show each page for that many seconds, in order.
@@ -61,12 +70,18 @@ struct DebugOptions {
         options.seqtaSync = (args["debugSeqtaSync"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.roundTripDirs = ((args["debugRoundTrip"] as? String) ?? "")
             .split(separator: ":").map { URL(fileURLWithPath: (String($0) as NSString).expandingTildeInPath) }
+        if let path = args["debugSeqtaCache"] as? String {
+            options.seqtaCache = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        options.subject = args["debugSubject"] as? String
+        options.message = (args["debugMessage"] as? String).flatMap(Int.init)
+        options.compose = (args["debugCompose"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.tasksView = (args["debugTasksView"] as? String).flatMap(TaskListKind.init(rawValue:))
         options.taskSelect = (args["debugTaskSelect"] as? String).flatMap(Int.init)
         func path(_ key: String) -> URL? {
             (args[key] as? String).map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
         }
-        options.seqtaCacheURL = path("debugSeqtaCache")
+        options.seqtaCacheURL = options.seqtaCache
         options.afterSync = (args["debugAfterSync"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.planURL = path("debugPlanPath")
         if let text = args["debugNow"] as? String, let minutes = TodayTime.minutes(text) {
@@ -97,19 +112,13 @@ enum Snapshot {
         process.arguments = ["-x", "-o", "-l", String(window.windowNumber), url.path]
         try process.run()
         process.waitUntilExit()
-        if process.terminationStatus != 0, let contentView = window.contentView {
-            // The screen is locked or asleep: draw the views instead (no sidebar material).
-            guard let rep = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds) else {
-                throw CocoaError(.fileWriteUnknown)
-            }
-            contentView.cacheDisplay(in: contentView.bounds, to: rep)
-            try rep.representation(using: .png, properties: [:])?.write(to: url, options: .atomic)
-            return
-        }
+        guard let contentView = window.contentView else { throw CocoaError(.fileWriteUnknown) }
         guard process.terminationStatus == 0, let captured = NSImage(contentsOf: url),
-              let contentView = window.contentView,
               let base = captured.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            throw CocoaError(.fileWriteUnknown)
+            // The screen is asleep or locked, so the window can't be captured. Draw the view
+            // itself instead (no sidebar material, but layout and colours are right).
+            try drawContentView(contentView, to: url)
+            return
         }
         let webViews = allWebViews(in: contentView).filter { $0.window != nil && !$0.isHiddenOrHasHiddenAncestor }
         guard !webViews.isEmpty else { return }
@@ -130,6 +139,13 @@ enum Snapshot {
         guard let combined = context.makeImage() else { return }
         try NSBitmapImageRep(cgImage: combined).representation(using: .png, properties: [:])?
             .write(to: url, options: .atomic)
+    }
+
+    private static func drawContentView(_ view: NSView, to url: URL) throws {
+        view.layoutSubtreeIfNeeded()
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.fileWriteUnknown) }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        try rep.representation(using: .png, properties: [:])?.write(to: url, options: .atomic)
     }
 
     private static func allWebViews(in view: NSView) -> [WKWebView] {

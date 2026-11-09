@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                              planURL: debug.planURL ?? PlanFile.defaultURL,
                              clockOffset: debug.clockOffset)
         if debug.seqtaCacheURL != nil { model.seqtaSync.autoSyncEnabled = false }
+        if let code = debug.subject { model.subjectCode = code }
         if let seconds = debug.seqtaUnloadAfter { model.seqtaUnloadAfter = .seconds(seconds) }
         return model
     }()
@@ -58,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         DispatchQueue.main.async { [model] in
             model.startToday()
             model.seqtaSync.startAutoSync()
+        }
+        if let id = debug.message { model.messages.select(id) }
+        if debug.compose {
+            model.messages.startCompose(MessageDraft(subject: "Excursion form", body: "Hi Ms Example,\n\nCould I hand the form in on Friday instead?\n\nThanks",
+                                                     toNames: ["Ms Example"]), inboxItemID: nil)
         }
         if debug.showHUD { model.showsHUD = true }
         if let probe = ProcessInfo.processInfo.environment["ATLANTIS_DOCS_PROBE"] {

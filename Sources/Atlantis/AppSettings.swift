@@ -15,6 +15,14 @@ enum AppSettings {
         set { defaults.set(newValue?.absoluteString, forKey: "seqtaURL") }
     }
 
+    /// Whether the temporary SEQTA web tab shows in the sidebar (PRD §7d). On until Today, Tasks,
+    /// Subjects and Messages cover a school day. Views read it with `@AppStorage(AppSettings.showSeqtaTabKey)`.
+    static let showSeqtaTabKey = "showSeqtaTab"
+    static var showSeqtaTab: Bool {
+        get { defaults.object(forKey: showSeqtaTabKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: showSeqtaTabKey) }
+    }
+
     /// The built BetterSEQTA+ extension (the fork's `npm run build:safari` output).
     static var extensionURL: URL {
         get {

@@ -9,7 +9,8 @@ import WebKit
 /// sync runs, fetches the JSON endpoints in that page, and is released when the sync ends, so
 /// idle costs nothing. There are no timers: a sync starts from the Refresh button or menu, or
 /// once a day from app launch or wake (`morningSyncIfNeeded`). It only reads; nothing here can
-/// send a message (the request allow-list in `SeqtaRequest` has no write endpoint).
+/// send a message (the request allow-list in `SeqtaRequest` has no write endpoint); the one send
+/// is `SeqtaSend`, reached only from the Messages compose view.
 ///
 /// What a sync fetches and decodes is `SeqtaSyncRunner` in AtlantisCore, which has the tests.
 @MainActor @Observable
@@ -40,6 +41,9 @@ final class SeqtaSync {
     @ObservationIgnored var onSynced: @MainActor (SeqtaSyncReport) async -> Void = { _ in }
     /// When false, `startAutoSync` does nothing (debug runs on a made-up cache).
     @ObservationIgnored var autoSyncEnabled = true
+
+    /// The connection a message send uses. Only `send(_:confirmed:)` below makes one.
+    @ObservationIgnored var makeSendTransport: @MainActor () -> any SeqtaSendTransport = { SeqtaWebTransport() }
 
     init(cache: SeqtaCache = SeqtaCache()) {
         self.cache = cache
@@ -112,6 +116,35 @@ final class SeqtaSync {
         }
     }
 
+    // MARK: On demand (the Messages and Subjects pages)
+
+    /// Each of these opens the hidden SEQTA page for its one request and unloads it again.
+    /// They only read, except `send`, which is the compose view's confirmed Send.
+
+    /// The whole message, from the cache if it was read before.
+    func readMessage(id: Int) async throws -> Message {
+        try await SeqtaOnDemand(transport: makeTransport(), cache: cache).message(id: id)
+    }
+
+    func people(_ kind: SeqtaPerson.Kind) async throws -> [SeqtaPerson] {
+        try await SeqtaOnDemand(transport: makeTransport(), cache: cache).people(kind)
+    }
+
+    /// A downloaded copy of a SEQTA file on this Mac (downloaded now if it isn't yet).
+    func localFile(uuid: String, name: String, source: SeqtaFileRequest.Source) async throws -> URL {
+        let files = SeqtaFileCache()
+        if let existing = files.existing(uuid: uuid, name: name) { return existing }
+        guard let request = SeqtaFileRequest(source: source, uuid: uuid) else { throw SeqtaSyncError.badResponse("file id") }
+        let response = try await SeqtaOnDemand(transport: makeTransport(), cache: cache).file(request)
+        let named = SeqtaFileCache.name(fromDisposition: response.disposition)
+        return try files.store(response.data, uuid: uuid, name: name.isEmpty ? (named ?? "file") : name)
+    }
+
+    /// Sends a message the user wrote and confirmed. The one place the app sends anything.
+    func send(_ message: SeqtaSend.Outgoing, confirmed: SeqtaSend.Confirmation) async throws {
+        try await SeqtaSend.send(message, confirmed: confirmed, via: makeSendTransport())
+    }
+
     /// Counts only (never contents) from the last good sync, for logs and the debug flag.
     private(set) var lastReportSummary: String?
 }
@@ -120,7 +153,7 @@ final class SeqtaSync {
 /// `close()`. It shares the SEQTA tab's website data store (the login) but may only reach the
 /// SEQTA host, so a sign-in redirect to anywhere else ends the sync as "not signed in".
 @MainActor
-final class SeqtaWebTransport: NSObject, SeqtaTransport, WKNavigationDelegate {
+final class SeqtaWebTransport: NSObject, SeqtaSendTransport, WKNavigationDelegate {
     private var webView: WKWebView?
     private var seqtaHost = ""
     private var navigation: CheckedContinuation<Void, Error>?
@@ -146,8 +179,18 @@ final class SeqtaWebTransport: NSObject, SeqtaTransport, WKNavigationDelegate {
     }
 
     func send(_ requests: [SeqtaRequest]) async throws -> [SeqtaResponse] {
-        guard let webView else { throw SeqtaSyncError.network("SEQTA isn't loaded") }
         for request in requests where !request.isAllowed { throw SeqtaSyncError.blockedRequest(request.path) }
+        return try await run(requests.map { (path: $0.path, body: $0.body) })
+    }
+
+    /// The message send (`SeqtaSend`): one POST, to the save endpoint and nothing else.
+    func post(_ request: SeqtaSendRequest) async throws -> SeqtaResponse {
+        guard request.path == SeqtaSend.path else { throw SeqtaSyncError.blockedRequest(request.path) }
+        return try await run([(path: request.path, body: request.body)])[0]
+    }
+
+    private func run(_ requests: [(path: String, body: String)]) async throws -> [SeqtaResponse] {
+        guard let webView else { throw SeqtaSyncError.network("SEQTA isn't loaded") }
         let list = requests.map { ["path": $0.path, "body": $0.body] }
         guard let data = try? JSONSerialization.data(withJSONObject: list) else { throw SeqtaSyncError.badResponse("requests") }
         let result: Any?
@@ -161,6 +204,24 @@ final class SeqtaWebTransport: NSObject, SeqtaTransport, WKNavigationDelegate {
               let answers = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [[String: Any]],
               answers.count == requests.count else { throw SeqtaSyncError.badResponse("page script") }
         return answers.map { SeqtaResponse(status: ($0["status"] as? Int) ?? 0, body: $0["body"] as? String ?? "") }
+    }
+
+    /// One file, as a read-only GET with the session's cookies (at most 25 MB).
+    func download(_ request: SeqtaFileRequest) async throws -> SeqtaFileResponse {
+        guard let webView else { throw SeqtaSyncError.network("SEQTA isn't loaded") }
+        let result: Any?
+        do {
+            result = try await webView.callAsyncJavaScript(Self.downloadScript, arguments: ["path": request.path],
+                                                           in: nil, contentWorld: .page)
+        } catch {
+            throw SeqtaSyncError.network("the SEQTA page stopped answering")
+        }
+        guard let text = result as? String,
+              let answer = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else {
+            throw SeqtaSyncError.badResponse("page script")
+        }
+        let data = (answer["base64"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data()
+        return SeqtaFileResponse(status: (answer["status"] as? Int) ?? 0, data: data, disposition: answer["disposition"] as? String ?? "")
     }
 
     func close() async {
@@ -198,6 +259,23 @@ final class SeqtaWebTransport: NSObject, SeqtaTransport, WKNavigationDelegate {
     }
     await Promise.all(Array.from({ length: Math.min(4, reqs.length) }, worker));
     return JSON.stringify(out);
+    """
+
+    private static let downloadScript = """
+    if (typeof path !== 'string' || !path.startsWith('/seqta/student/load/file?')) return JSON.stringify({ status: 0 });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    try {
+      const res = await fetch(location.origin + path, { credentials: 'include', signal: controller.signal });
+      const buffer = await res.arrayBuffer();
+      if (buffer.byteLength > 26214400) return JSON.stringify({ status: 413 });
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return JSON.stringify({ status: res.status, disposition: res.headers.get('content-disposition') || '', base64: btoa(binary) });
+    } catch (e) {
+      return JSON.stringify({ status: 0 });
+    } finally { clearTimeout(timer); }
     """
 
     // MARK: Loading

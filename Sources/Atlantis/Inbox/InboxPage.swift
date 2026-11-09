@@ -40,6 +40,8 @@ enum InboxStyle {
 
 struct InboxPage: View {
     let store: InboxStore
+    /// Opens a `message.draft` in the Messages compose view (it still needs Send + confirm there).
+    var openDraft: (InboxItem) -> Void = { _ in }
     @State private var selection: String?
     @State private var editing: InboxItem?
     @State private var doneExpanded = false
@@ -84,7 +86,7 @@ struct InboxPage: View {
                 }
                 ForEach(store.pending) { item in
                     InboxRow(item: item, isAllowed: store.isAllowed(kind: item.kind),
-                             accept: { accept(item.id) }, edit: { editing = item },
+                             accept: { accept(item.id) }, edit: { editing = item }, openDraft: { openDraft(item) },
                              dismiss: { dismiss(item.id) },
                              toggleAllowed: { store.setAllowed(!store.isAllowed(kind: item.kind), kind: item.kind) })
                         .tag(item.id)
@@ -158,6 +160,7 @@ private struct InboxRow: View {
     let isAllowed: Bool
     let accept: () -> Void
     let edit: () -> Void
+    let openDraft: () -> Void
     let dismiss: () -> Void
     let toggleAllowed: () -> Void
 
@@ -184,10 +187,19 @@ private struct InboxRow: View {
             }
             Spacer(minLength: Space.m)
             HStack(spacing: Space.s) {
-                Button("Accept", action: accept)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("Accept (Return)")
+                if item.kind == "message.draft" {
+                    // A draft is only ever opened for the user to send; accepting it here would
+                    // just tick it off without sending anything.
+                    Button("Open in Messages", action: openDraft)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .help("Open the draft in Messages. You still press Send and confirm.")
+                } else {
+                    Button("Accept", action: accept)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Accept (Return)")
+                }
                 Button(action: edit) { Image(systemName: "pencil") }
                     .buttonStyle(.borderless)
                     .help("Edit")
@@ -201,6 +213,7 @@ private struct InboxRow: View {
         .padding(.vertical, Space.xs)
         .frame(minHeight: Size.listRowMinHeight)
         .contextMenu {
+            if item.kind == "message.draft" { Button("Open in Messages", action: openDraft) }
             Button("Accept", action: accept)
             Button("Edit…", action: edit)
             Button("Dismiss", action: dismiss)

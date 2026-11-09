@@ -6,24 +6,49 @@ import SwiftUI
 /// Uses the plain system look until the design is approved (AGENTS.md "Design").
 struct RootView: View {
     @Bindable var model: AppModel
+    @AppStorage(AppSettings.showSeqtaTabKey) private var showSeqtaTab = true
+    @State private var subjectsExpanded = true
+
+    /// The bottom group. The temporary SEQTA tab can be hidden in Settings (PRD §7d); dropping it
+    /// for good is deleting `Page.seqta` from the bottom group in `Page.isPinnedToBottom`.
+    private var bottomPages: [Page] {
+        Page.bottom.filter { $0 != .seqta || showSeqtaTab || model.page == .seqta }
+    }
+
+    /// Subjects with one sub-item per subject (a coloured dot each).
+    private var subjectsGroup: some View {
+        DisclosureGroup(isExpanded: $subjectsExpanded) {
+            ForEach(model.seqtaData.subjects) { subject in
+                Label { Text(subject.name) } icon: { SubjectDot(colour: subject.colour) }
+                    .tag(SidebarItem.subject(subject.code))
+            }
+        } label: {
+            Label(Page.subjects.title, systemImage: Page.subjects.systemImage)
+                .tag(SidebarItem.page(.subjects))
+        }
+    }
 
     var body: some View {
         NavigationSplitView {
             List(selection: selection) {
                 ForEach(Page.main) { page in
-                    Label(page.title, systemImage: page.systemImage)
-                        .tag(page)
-                        .badge(page == .inbox ? model.inbox.pending.count : 0)
+                    if page == .subjects {
+                        subjectsGroup
+                    } else {
+                        Label(page.title, systemImage: page.systemImage)
+                            .tag(SidebarItem.page(page))
+                            .badge(page == .inbox ? model.inbox.pending.count : 0)
+                    }
                 }
             }
             .safeAreaInset(edge: .bottom) {
                 List(selection: selection) {
-                    ForEach(Page.bottom) { page in
-                        Label(page.title, systemImage: page.systemImage).tag(page)
+                    ForEach(bottomPages) { page in
+                        Label(page.title, systemImage: page.systemImage).tag(SidebarItem.page(page))
                     }
                 }
                 .scrollDisabled(true)
-                .frame(height: 44)
+                .frame(height: Size.listRowMinHeight * CGFloat(bottomPages.count) + Space.s)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
         } detail: {
@@ -45,9 +70,9 @@ struct RootView: View {
         switch model.page {
         case .today: TodayPage(model: model)
         case .tasks: TasksPage(store: model.tasks)
-        case .inbox: InboxPage(store: model.inbox)
-        case .messages: PlaceholderPage(page: .messages, note: "SEQTA messages will show here (M4b).")
-        case .subjects: PlaceholderPage(page: .subjects, note: "Marks, feedback and files per subject will show here (M4b).")
+        case .inbox: InboxPage(store: model.inbox, openDraft: model.openDraftInMessages)
+        case .messages: MessagesPage(model: model)
+        case .subjects: SubjectsPage(model: model)
         case .agents: PlaceholderPage(page: .agents, note: "Your bot team will show here (M5).")
         case .docs: DocsPage(docs: model.docs)
         case .seqta: SeqtaPage(seqta: model.seqta)
@@ -56,9 +81,30 @@ struct RootView: View {
     }
 
     /// Both lists share one selection; clicking empty space never clears it.
-    private var selection: Binding<Page?> {
-        Binding(get: { model.page }, set: { if let page = $0 { model.page = page } })
+    private var selection: Binding<SidebarItem?> {
+        Binding(
+            get: {
+                if model.page == .subjects, let code = model.subjectCode { return .subject(code) }
+                return .page(model.page)
+            },
+            set: {
+                switch $0 {
+                case .page(let page)?:
+                    if page == .subjects { model.subjectCode = nil }
+                    model.page = page
+                case .subject(let code)?:
+                    model.subjectCode = code
+                    model.page = .subjects
+                case nil: break
+                }
+            })
     }
+}
+
+/// What a sidebar row selects: a page, or one subject's page under Subjects.
+enum SidebarItem: Hashable {
+    case page(Page)
+    case subject(String)
 }
 
 struct SeqtaToolbar: ToolbarContent {
