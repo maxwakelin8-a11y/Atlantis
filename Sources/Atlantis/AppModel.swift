@@ -52,6 +52,17 @@ final class AppModel {
         return store
     }
 
+    @ObservationIgnored private var inboxStorage: InboxStore?
+
+    /// Created the first time it's needed (the sidebar badge or the Inbox page), then kept.
+    var inbox: InboxStore {
+        if let inboxStorage { return inboxStorage }
+        let store = InboxStore(vault: VaultPaths(root: AppSettings.vaultURL))
+        store.start()
+        inboxStorage = store
+        return store
+    }
+
     /// How long a hidden SEQTA page stays loaded.
     @ObservationIgnored var seqtaUnloadAfter: Duration = .seconds(600)
 
