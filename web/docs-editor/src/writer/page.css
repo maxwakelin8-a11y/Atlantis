@@ -891,6 +891,26 @@
 #bsplus-writer .wr-find-hit { background: color-mix(in srgb, #ffd43b 45%, transparent); border-radius: 2px; }
 #bsplus-writer .wr-find-hit.is-current { background: #ff922b; color: #1d1d1f; box-shadow: 0 0 0 1px #ff922b; }
 
+/* Atlantis M6: "Ask School ⌘↩" beside a paragraph with an @mention. */
+#bsplus-writer .wr-ask-chip {
+  position: fixed;
+  z-index: 99990;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  border: 1px solid var(--wr-border);
+  background: var(--wr-popover);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+#bsplus-writer .wr-ask-chip:hover:not([disabled]) { background: var(--wr-accent); color: var(--wr-accent-fg); }
+#bsplus-writer .wr-ask-chip:hover:not([disabled]) .wr-faint { color: inherit; opacity: 0.75; }
+#bsplus-writer .wr-ask-chip[disabled] { opacity: 0.7; cursor: default; }
 #bsplus-writer .wr-slash { min-width: 230px; max-height: 320px; overflow: auto; }
 #bsplus-writer .wr-slash-head { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; padding: 4px 8px 4px; }
 #bsplus-writer .wr-menu-item.is-active { background: var(--wr-accent); color: var(--wr-accent-fg); }

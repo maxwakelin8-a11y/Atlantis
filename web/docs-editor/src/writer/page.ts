@@ -27,6 +27,8 @@ import {
   type BlockStyle,
   type Editor,
 } from "./editor";
+import { call } from "./fs";
+import { filterBots, findMention, mentionQuery, type MentionBot, type MentionRequest } from "./mentions";
 import { commentKey, contextBefore, findKey, locateQuote, reviewKey, reviewRanges, type Comment, type FindMeta, type Range } from "./plugins";
 import { diffSummary, diffWords, minutesLabel, plainText, textStats } from "./stats";
 import { hitAt, hitsIn, isSoft, KIND_LABEL, previewParts, proofBlocks, proofKey, Proofreader, type ProofHit } from "./proofread";
@@ -241,6 +243,12 @@ export class WriterPage {
   private stopped = false;
   private find = { open: false, replace: false, query: "", caseSensitive: false, index: 0 };
   private slash: { editor: Editor; from: number; index: number; el: HTMLElement } | null = null;
+  // Atlantis M6: @mentions. The popup lists bots that can be mentioned; the chip asks one.
+  private mention: { editor: Editor; from: number; index: number; el: HTMLElement } | null = null;
+  private mentionBots: MentionBot[] | null = null;
+  private mentionBotsLoad: Promise<void> | null = null;
+  private askChip: { el: HTMLElement; editor: Editor; req: MentionRequest } | null = null;
+  private asking = false;
   private bubble: HTMLElement | null = null;
   private activeComment: string | null = null;
   private editingComment: string | null = null;
@@ -1121,10 +1129,15 @@ export class WriterPage {
         this.updateFormatBar();
         this.updateSelectionCount();
         this.updateSlash();
+        this.updateMention();
         this.updateBubble();
+        this.updateAskChip();
         if (this.prefs.typewriter) this.typewriterScroll(ed);
       },
-      onBlur: () => setTimeout(() => this.updateBubble(), 0),
+      onBlur: () => setTimeout(() => {
+        this.updateBubble();
+        this.updateAskChip();
+      }, 0),
       onKeyDown: (view, event) => this.onEditorKey(n.path, view, event),
       comments: () => this.commentsOf(n.path),
       activeComment: () => this.activeComment,
@@ -1155,6 +1168,8 @@ export class WriterPage {
     this.editors.clear();
     this.activeEditor = null;
     this.closeSlash();
+    this.closeMention();
+    this.hideAskChip();
     this.hideBubble();
   }
 
@@ -3398,6 +3413,36 @@ export class WriterPage {
   // ── Slash menu ───────────────────────────────────────────────────────────
   private onEditorKey(_path: string, view: EditorView, e: KeyboardEvent): boolean {
     const ed = this.activeEditor;
+    if (this.mention) {
+      const items = this.mentionItems();
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        this.mention.index = (this.mention.index + (e.key === "ArrowDown" ? 1 : -1) + items.length) % Math.max(1, items.length);
+        this.drawMention();
+        return true;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && items.length && !e.metaKey && !e.ctrlKey) {
+        this.runMention(items[this.mention.index]);
+        return true;
+      }
+      if (e.key === "Escape") {
+        this.closeMention();
+        return true;
+      }
+    }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && this.askChip && ed?.view === view) {
+      void this.askBot();
+      return true;
+    }
+    if (e.key === "@" && !e.metaKey && !e.ctrlKey && ed && ed.view === view) {
+      const { $from, empty } = view.state.selection;
+      if (empty && $from.parent.type.name !== "codeBlock") {
+        const before = $from.parent.textBetween(0, $from.parentOffset, " ", " ");
+        if (!before || /[\s(]$/.test(before)) {
+          const from = $from.pos;
+          setTimeout(() => void this.openMention(ed, from), 0);
+        }
+      }
+    }
     if (this.slash) {
       const items = this.slashItems();
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -3505,6 +3550,158 @@ export class WriterPage {
   private closeSlash(): void {
     this.slash?.el.remove();
     this.slash = null;
+  }
+
+  // ── @mentions (Atlantis M6) ──────────────────────────────────────────────
+  /** Bots that can be @mentioned (names only), from Swift. Fresh each time the popup opens. */
+  private loadMentionBots(fresh = false): Promise<void> {
+    if (fresh || !this.mentionBotsLoad) {
+      this.mentionBotsLoad = call<MentionBot[]>("agents.list")
+        .then((bots) => {
+          this.mentionBots = Array.isArray(bots) ? bots : [];
+        })
+        .catch(() => {
+          this.mentionBots = [];
+        });
+    }
+    return this.mentionBotsLoad;
+  }
+
+  private async openMention(editor: Editor, from: number): Promise<void> {
+    await this.loadMentionBots(true);
+    if (editor.isDestroyed || !this.mentionBots?.length) return;
+    if (editor.state.doc.textBetween(from, Math.min(from + 1, editor.state.doc.content.size), " ") !== "@") return;
+    this.closeMention();
+    const el = h("div", { class: "wr-menu wr-slash wr-mention", attrs: { role: "listbox", "aria-label": "Mention a bot" } });
+    this.root.append(el);
+    this.mention = { editor, from, index: 0, el };
+    this.hideAskChip();
+    this.updateMention();
+  }
+
+  private mentionQueryText(): string | null {
+    const m = this.mention;
+    if (!m) return null;
+    const { state } = m.editor;
+    const head = state.selection.head;
+    if (head <= m.from || m.from >= state.doc.content.size) return null;
+    if (state.doc.textBetween(m.from, m.from + 1, " ") !== "@") return null;
+    if (state.doc.resolve(head).parent !== state.doc.resolve(m.from).parent) return null;
+    return mentionQuery(state.doc.textBetween(m.from, head, " "));
+  }
+
+  private mentionItems(): MentionBot[] {
+    const q = this.mentionQueryText();
+    return q === null ? [] : filterBots(this.mentionBots ?? [], q);
+  }
+
+  private updateMention(): void {
+    if (!this.mention) return;
+    if (this.mentionQueryText() === null || !this.mentionItems().length) return this.closeMention();
+    this.drawMention();
+  }
+
+  private drawMention(): void {
+    const m = this.mention;
+    if (!m) return;
+    const items = this.mentionItems();
+    if (m.index >= items.length) m.index = 0;
+    m.el.replaceChildren(
+      h("div", { class: "wr-slash-head wr-faint", text: "Ask a bot" }),
+      ...items.map((bot, i) =>
+        h("button", {
+          class: `wr-menu-item ${i === m.index ? "is-active" : ""}`,
+          attrs: { role: "option", "aria-selected": String(i === m.index) },
+          on: { mousedown: (e) => e.preventDefault(), click: () => this.runMention(bot) },
+        }, [h("span", { class: "wr-menu-check", text: bot.avatar }), h("span", { class: "wr-menu-label", text: bot.name }), h("span", { class: "wr-faint wr-kbd", text: `@${bot.id}` })]),
+      ),
+    );
+    try {
+      const c = m.editor.view.coordsAtPos(m.from);
+      const w = m.el.offsetWidth;
+      const ht = m.el.offsetHeight;
+      const below = c.bottom + 6 + ht < window.innerHeight;
+      m.el.style.left = `${Math.min(c.left, window.innerWidth - w - 8)}px`;
+      m.el.style.top = `${below ? c.bottom + 6 : c.top - ht - 6}px`;
+    } catch {}
+  }
+
+  /** Writes `@<id> ` in place of what was typed; the request follows as plain text. */
+  private runMention(bot: MentionBot): void {
+    const m = this.mention;
+    if (!m) return;
+    this.closeMention();
+    const head = m.editor.state.selection.head;
+    m.editor.chain().focus().insertContentAt({ from: m.from, to: head }, `@${bot.id} `).run();
+  }
+
+  private closeMention(): void {
+    this.mention?.el.remove();
+    this.mention = null;
+  }
+
+  /** Shows "Ask School ⌘↩" at the end of a paragraph holding `@school <request>`. */
+  private updateAskChip(): void {
+    const ed = this.activeEditor;
+    if (!ed || ed.isDestroyed || !ed.isFocused || !ed.isEditable || this.mention || this.slash) return this.hideAskChip();
+    const { $from } = ed.state.selection;
+    const text = $from.parent.textContent;
+    if ($from.parent.type.name === "codeBlock" || !text.includes("@")) return this.hideAskChip();
+    if (this.mentionBots === null) {
+      void this.loadMentionBots().then(() => this.updateAskChip());
+      return;
+    }
+    const bots = this.mentionBots;
+    const req = findMention(text, bots.map((b) => b.id));
+    const bot = req && bots.find((b) => b.id === req.bot);
+    if (!req || !bot) return this.hideAskChip();
+    let el = this.askChip?.el;
+    if (!el) {
+      el = h("button", {
+        class: "wr-ask-chip",
+        attrs: { type: "button", title: "Send this request and the doc to the bot. Its answer goes to your Inbox." },
+        on: { mousedown: (e) => e.preventDefault(), click: () => void this.askBot() },
+      });
+      this.root.append(el);
+    }
+    this.askChip = { el, editor: ed, req };
+    el.replaceChildren(
+      h("span", { text: this.asking ? `Asking ${bot.name}…` : `${bot.avatar} Ask ${bot.name}` }),
+      h("span", { class: "wr-faint wr-kbd", text: "⌘↩" }),
+    );
+    el.toggleAttribute("disabled", this.asking);
+    try {
+      const c = ed.view.coordsAtPos($from.end());
+      const w = el.offsetWidth;
+      el.style.left = `${Math.max(8, Math.min(c.right + 10, window.innerWidth - w - 8))}px`;
+      el.style.top = `${c.top - 3}px`;
+    } catch {}
+  }
+
+  private hideAskChip(): void {
+    this.askChip?.el.remove();
+    this.askChip = null;
+  }
+
+  /** Saves the doc, then sends the request (Swift reads the saved doc and checks the path). */
+  private async askBot(): Promise<void> {
+    const chip = this.askChip;
+    const p = this.project;
+    if (!chip || !p || this.asking) return;
+    const path = [...this.editors].find(([, ed]) => ed === chip.editor)?.[0];
+    if (!path) return;
+    this.asking = true;
+    this.updateAskChip();
+    try {
+      await this.saveNow(path);
+      const r = await call<{ message?: string }>("agents.ask", { bot: chip.req.bot, path: `${this.dir}/${p.id}/${path}`, request: chip.req.request });
+      this.toast(r?.message ?? "Asked. The answer will land in your Inbox.");
+    } catch (err) {
+      this.toast(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      this.asking = false;
+      this.updateAskChip();
+    }
   }
 
   // ── Selection toolbar ────────────────────────────────────────────────────
