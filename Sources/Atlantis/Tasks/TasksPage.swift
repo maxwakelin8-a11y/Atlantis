@@ -5,6 +5,9 @@ import SwiftUI
 /// Keys: ⌘N quick add · J/K or ↑/↓ move · Space complete (or reopen) · Esc leave a field / deselect.
 struct TasksPage: View {
     let store: TaskStore
+    /// Bots that take tasks (M6): the inspector's "Assign to bot".
+    let agents: AgentService
+    var openInbox: () -> Void = {}
 
     @State private var kind: TaskListKind = .today
     @State private var selection: String?
@@ -33,7 +36,8 @@ struct TasksPage: View {
             .frame(minWidth: Size.pageMinWidth, maxWidth: .infinity)
             if let task = selected {
                 Divider()
-                TaskInspector(store: store, task: task, edit: edit(_:), delete: delete, close: { selection = nil })
+                TaskInspector(store: store, task: task, edit: edit(_:), delete: delete, close: { selection = nil },
+                              agents: agents, assign: assign(_:), openInbox: openInbox)
                     .id(task.id)
                     .frame(width: Size.sidePanel)
                     .transition(.move(edge: .trailing))
@@ -183,6 +187,14 @@ struct TasksPage: View {
     private func edit(_ change: (inout TaskItem) -> Void) {
         guard let id = selection else { return }
         if let newID = run({ try store.update(id: id, change) }), newID != id { selection = newID }
+    }
+
+    /// Assigns the selected task to a bot (or clears it) and starts its run.
+    private func assign(_ bot: String?) -> String? {
+        guard let task = selected else { return nil }
+        let (id, problem) = agents.assign(task, to: bot)
+        if id != selection { selection = id }
+        return problem
     }
 
     private func delete() {

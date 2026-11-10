@@ -13,20 +13,27 @@ public struct InboxProposal: Sendable, Equatable {
     /// Extra `[key:: value]` fields on the Inbox line. Accept reads these back, so a proposal
     /// carries everything needed to apply it. Values must already be line-safe (see `InboxText`).
     public var fields: [InboxItem.Field]
+    /// What started the bot run that made it (`task:<id>`, `doc:<path>`), written as `[origin:: …]`.
+    public var origin: String?
 
     public init(kind: String, title: String, body: String = "", payload: JSONValue? = nil,
-                source: String = MCPCaller.source, fields: [InboxItem.Field] = []) {
+                source: String = MCPCaller.source, fields: [InboxItem.Field] = [],
+                origin: String? = MCPCaller.agentOrigin) {
         self.kind = kind
         self.title = title
         self.body = body
         self.payload = payload
         self.source = source
         self.fields = fields
+        self.origin = origin
     }
 
     /// The Inbox line for this proposal. The body and any payload go in fields (encoded to stay on one line).
     public func makeItem() -> InboxItem {
         var all = fields
+        if let origin, !origin.isEmpty, !all.contains(where: { $0.key == AgentOrigin.fieldKey }) {
+            all.append(.init(key: AgentOrigin.fieldKey, value: InboxText.encode(origin)))
+        }
         if !body.isEmpty, !all.contains(where: { $0.key == "body" }) {
             all.append(.init(key: "body", value: InboxText.encode(String(body.prefix(InboxText.maxFieldLength)))))
         }

@@ -81,6 +81,7 @@ final class AppModel {
     var docs: DocsController {
         if let docsIfStarted { return docsIfStarted }
         let controller = DocsController()
+        controller.agents = { [unowned self] in self.agents }
         docsIfStarted = controller
         return controller
     }
@@ -108,6 +109,9 @@ final class AppModel {
             guard let self else { return }
             try InboxActions(tasks: self.tasks, writerRoot: { AppSettings.writerURL }).apply(item)
         }
+        // A bot run waiting on approval (ask autonomy) hears when its item is decided.
+        let approvals = mcp.approvals
+        store.onStates = { states in approvals.inboxDecided(states) }
         store.start()
         inboxStorage = store
         return store
@@ -122,7 +126,8 @@ final class AppModel {
     var agents: AgentService {
         if let agentsIfStarted { return agentsIfStarted }
         let offset = clockOffset
-        let service = AgentService(mcp: mcp, now: { Date().addingTimeInterval(offset) })
+        let service = AgentService(mcp: mcp, inbox: { [unowned self] in self.inbox }, tasks: { [unowned self] in self.tasks },
+                                   now: { Date().addingTimeInterval(offset) })
         agentsIfStarted = service
         return service
     }

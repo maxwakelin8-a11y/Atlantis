@@ -9,9 +9,14 @@ struct TaskInspector: View {
     let edit: ((inout TaskItem) -> Void) -> Void
     let delete: () -> Void
     let close: () -> Void
+    let agents: AgentService
+    /// Sets or clears `[agent:: …]` and starts the bot; returns a problem to show.
+    let assign: (String?) -> String?
+    let openInbox: () -> Void
 
     @State private var newSubtask = ""
     @State private var confirmDelete = false
+    @State private var botProblem: String?
 
     private var calendar: Calendar { store.timeZoneCalendar }
 
@@ -44,6 +49,7 @@ struct TaskInspector: View {
                     CommitTextEditor(value: task.notes) { text in edit { $0.setNotes(text) } }
                 }
                 labelled("Subtasks") { subtasks }
+                labelled("Bot") { botSection }
                 footer
             }
             .padding(Space.l)
@@ -187,6 +193,94 @@ struct TaskInspector: View {
             }
         }
     }
+
+    // MARK: Bot (M6)
+
+    private var botSection: some View {
+        let bots = agents.taskBots
+        let assigned = task.agent
+        let assignedBot = assigned.flatMap { id in bots.first { $0.id == id } }
+        let status = agents.taskStatus(task)
+        let running: Bool = {
+            switch status {
+            case .working?, .waitingForApproval?: true
+            default: false
+            }
+        }()
+        return VStack(alignment: .leading, spacing: Space.s) {
+            HStack(spacing: Space.s) {
+                Picker("Assign to bot", selection: Binding(
+                    get: { assigned ?? "" },
+                    set: { id in botProblem = assign(id.isEmpty ? nil : id) }
+                )) {
+                    Text("Not assigned").tag("")
+                    if let assigned, assignedBot == nil {
+                        Text("\(assigned) (can't take tasks)").tag(assigned)
+                    }
+                    ForEach(bots) { bot in
+                        Text("\(bot.avatar) \(bot.name)").tag(bot.id)
+                    }
+                }
+                .labelsHidden()
+                .disabled(running)
+                Button("Run Now", systemImage: "play.fill") {
+                    guard let assigned else { return }
+                    botProblem = agents.runTask(task, botID: assigned)
+                }
+                .labelStyle(.iconOnly)
+                .help(assignedBot.map { "Ask \($0.name) to work on this task again" } ?? "Assign a bot first")
+                .disabled(assignedBot == nil || running || task.blockID == nil)
+            }
+            if let botProblem {
+                Label(botProblem, systemImage: "exclamationmark.triangle")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.warning)
+            } else if let status {
+                botStatus(status)
+            } else if bots.isEmpty {
+                Text("No bot takes tasks yet. Add task to a bot's triggers on the Agents page.")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+            } else if assigned == nil {
+                Text("The bot works on it and puts its answer in your Inbox.")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+        }
+        .onChange(of: task.agent) { botProblem = nil }
+    }
+
+    @ViewBuilder private func botStatus(_ status: AgentService.TaskStatus) -> some View {
+        switch status {
+        case .working(let bot):
+            HStack(spacing: Space.s) {
+                ProgressView().controlSize(.small)
+                Text("\(name(bot)) is working…").font(Typo.caption).foregroundStyle(Palette.textSecondary)
+            }
+        case .waitingForApproval(let bot):
+            Label("\(name(bot)) is waiting for your approval (Agents or Inbox)", systemImage: "hand.raised")
+                .font(Typo.caption)
+                .foregroundStyle(Palette.warning)
+        case .done(let bot, _):
+            HStack(spacing: Space.xs) {
+                Label("Done", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(Palette.success)
+                Text("— \(name(bot))'s answer is in the Inbox").foregroundStyle(Palette.textSecondary)
+                Button("Open Inbox", action: openInbox)
+                    .buttonStyle(.link)
+            }
+            .font(Typo.caption)
+        case .failed(let bot, let message):
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                Label("\(name(bot)) couldn't finish", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(Palette.warning)
+                Text(message).foregroundStyle(Palette.textSecondary).lineLimit(3)
+            }
+            .font(Typo.caption)
+        }
+    }
+
+    private func name(_ bot: String) -> String { agents.bot(bot)?.name ?? bot }
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: Space.xs) {

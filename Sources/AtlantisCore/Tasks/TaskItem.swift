@@ -155,6 +155,11 @@ public struct TaskItem: Equatable, Sendable, Identifiable {
         get { field("project") }
         set { setField("project", newValue) }
     }
+    /// The bot the task is assigned to (`agent::`, a bot id like `school`), PRD §7b.
+    public var agent: String? {
+        get { field("agent") }
+        set { setField("agent", newValue) }
+    }
     /// Where the task came from (`source::` or the older `from::`).
     public var source: String? { field("source") ?? field("from") }
 

@@ -139,22 +139,26 @@ private func botFile(_ front: String, body: String = "Be helpful.") -> String {
         let root = tempDir("bots")
         defer { try? FileManager.default.removeItem(at: root) }
         let vault = VaultPaths(root: root)
-        #expect(try BotLibrary.ensureDefaults(vault: vault))
+        #expect(try BotLibrary.ensureDefaults(vault: vault) == ["school", "coach", "builder"])
         let url = vault.agentsDir.appendingPathComponent("school.md")
         try "---\nname: Mine\ntools: [atlantis_today]\n---\nMy own soul.\n".write(to: url, atomically: true, encoding: .utf8)
-        #expect(try !BotLibrary.ensureDefaults(vault: vault))
+        try FileManager.default.removeItem(at: vault.agentsDir.appendingPathComponent("coach.md"))
+        #expect(try BotLibrary.ensureDefaults(vault: vault) == ["coach"]) // only the missing one
+        #expect(try BotLibrary.ensureDefaults(vault: vault).isEmpty)
         #expect(try String(contentsOf: url, encoding: .utf8).contains("My own soul."))
 
         try "---\ntools: [nope]\n---\nX\n".write(to: vault.agentsDir.appendingPathComponent("broken.md"), atomically: true, encoding: .utf8)
         let entries = BotLibrary.load(vault: vault)
-        #expect(entries.map(\.id) == ["school", "broken"])
+        #expect(entries.map(\.id) == ["school", "broken", "builder", "coach"])
         #expect(entries[0].definition?.name == "Mine")
         #expect(entries[1].definition == nil && entries[1].problems.first?.contains("nope") == true)
+        #expect(entries[2].definition?.allowsMention == true && entries[2].definition?.allowsTask == false)
+        #expect(entries[3].definition?.allowsTask == true && entries[3].definition?.autonomy == .suggest)
     }
 
     @Test func noVaultNoDefaults() throws {
         let vault = VaultPaths(root: URL(fileURLWithPath: "/tmp/atl-no-vault-\(UUID().uuidString)"))
-        #expect(try !BotLibrary.ensureDefaults(vault: vault))
+        #expect(try BotLibrary.ensureDefaults(vault: vault).isEmpty)
     }
 }
 

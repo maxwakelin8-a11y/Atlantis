@@ -12,7 +12,8 @@ public enum AgentPrompt {
             ? "To suggest a change (a task, a reminder, a doc edit, a message draft), post it to the Inbox with atlantis_inbox_post; the user decides there."
             : "You can't change anything; tell the user what you'd suggest instead."
         let autonomy = switch bot.autonomy {
-        case .suggest, .ask: "Every change you ask for becomes an Inbox proposal for the user to accept."
+        case .suggest: "Every change you ask for becomes an Inbox proposal for the user to accept."
+        case .ask: "Each change you ask for waits for the user to approve or deny it; the tool's answer tells you which. If they deny it, don't try it again."
         case .act: "Changes on the user's allow list run straight away; everything else becomes an Inbox proposal."
         }
         return """

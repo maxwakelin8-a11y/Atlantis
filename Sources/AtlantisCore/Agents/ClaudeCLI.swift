@@ -118,6 +118,9 @@ public enum ClaudeCLI {
             "DISABLE_AUTOUPDATER": "1",
             "DISABLE_TELEMETRY": "1",
             "DISABLE_ERROR_REPORTING": "1",
+            // A tool call may wait for the user to approve a write (`ask` bots): a bit longer than
+            // the helper's own limit, so the helper's clear message arrives first.
+            "MCP_TOOL_TIMEOUT": String(Int(SocketToolBackend.agentCallTimeout + 15) * 1000),
         ]
     }
 

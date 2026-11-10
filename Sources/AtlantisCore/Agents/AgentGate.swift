@@ -8,13 +8,20 @@ public struct AgentGrant: Sendable, Equatable {
     /// Tool calls allowed before the gate refuses ("max steps per run").
     public var maxCalls: Int
     public var autonomy: Autonomy
+    /// The run this grant is for (approval cards show in its thread).
+    public var runID: String
+    /// What started the run (`task:<id>`, `doc:<path>`), linked from Inbox items it makes.
+    public var origin: String?
     public var calls: Int = 0
 
-    public init(bot: String, tools: Set<String>, maxCalls: Int, autonomy: Autonomy) {
+    public init(bot: String, tools: Set<String>, maxCalls: Int, autonomy: Autonomy, runID: String = "",
+                origin: String? = nil) {
         self.bot = bot
         self.tools = tools
         self.maxCalls = maxCalls
         self.autonomy = autonomy
+        self.runID = runID
+        self.origin = origin
     }
 }
 
@@ -98,9 +105,15 @@ public struct AgentToolGate: ToolBackend {
         case .refused(let reason):
             return .error(reason)
         case .allowed(let grant):
+            // The registry routes gated writes by the bot's autonomy (WriteRoute): enforced here,
+            // per call, not just described in the prompt.
             let result = try await MCPCaller.$agentName.withValue(grant.bot) {
-                try await MCPCaller.$proposalsOnly.withValue(grant.autonomy.proposalsOnly) {
-                    try await inner.callTool(name: name, arguments: arguments)
+                try await MCPCaller.$autonomy.withValue(grant.autonomy) {
+                    try await MCPCaller.$agentRunID.withValue(grant.runID) {
+                        try await MCPCaller.$agentOrigin.withValue(grant.origin) {
+                            try await inner.callTool(name: name, arguments: arguments)
+                        }
+                    }
                 }
             }
             return ToolResult(text: UntrustedText.wrap(result.text, source: name), isError: result.isError)

@@ -18,6 +18,9 @@ final class InboxStore {
     /// Called when a proposal is accepted, before it's marked accepted. If it throws the item
     /// stays pending. Tasks are wired in here later; by default accepting only marks it.
     @ObservationIgnored var onAccept: @MainActor (InboxItem) async throws -> Void = { _ in }
+    /// Called with every item's state after the file is read or written, so a bot run waiting on a
+    /// decision (`ask` autonomy) hears about it wherever the user decided (here, the thread, Obsidian).
+    @ObservationIgnored var onStates: (@MainActor ([String: InboxItem.State]) -> Void)?
 
     static let allowKindsKey = "inboxAllowKinds"
 
@@ -55,7 +58,7 @@ final class InboxStore {
         do {
             let text = try TextFile.read(url) ?? ""
             let fresh = InboxFile(text: text)
-            if fresh != file { file = fresh; items = fresh.items }
+            if fresh != file { file = fresh; items = fresh.items; reportStates() }
             lastError = nil
         } catch {
             lastError = "Couldn't read the Inbox file: \(error.localizedDescription)"
@@ -93,7 +96,13 @@ final class InboxStore {
 
     // MARK: Changing items
 
-    /// Adds a proposal. If its kind is on the always-allow list it's accepted straight away.
+    private func reportStates() {
+        guard let onStates else { return }
+        onStates(Dictionary(items.map { ($0.id, $0.state) }, uniquingKeysWith: { _, last in last }))
+    }
+
+    /// Adds a proposal. If its kind is on the always-allow list it's accepted straight away,
+    /// except a bot's: a bot's autonomy decides what it may do (PRD §7b), not this list.
     @discardableResult
     func post(_ item: InboxItem) async throws -> InboxItem {
         var item = item
@@ -103,7 +112,7 @@ final class InboxStore {
             file.append(item)
             return true
         }
-        if isAllowed(kind: item.kind) {
+        if isAllowed(kind: item.kind), !item.source.hasPrefix("agent:") {
             do { try await accept(id: item.id) } catch {
                 lastError = "Couldn't accept \(item.title): \(error.localizedDescription)"
             }
@@ -161,6 +170,7 @@ final class InboxStore {
             file = latest
             items = latest.items
             lastError = nil
+            reportStates()
         } catch {
             lastError = "Couldn't update the Inbox file: \(error.localizedDescription)"
             Log.app.error("Inbox write failed: \(error.localizedDescription, privacy: .public)")

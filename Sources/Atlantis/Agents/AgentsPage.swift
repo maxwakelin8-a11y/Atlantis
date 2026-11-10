@@ -39,7 +39,7 @@ private struct BotList: View {
                         Label("New chat", systemImage: "square.and.pencil")
                             .tag(AgentService.Selection.newChat(bot.id))
                         ForEach(service.threads[bot.id] ?? []) { thread in
-                            ThreadRow(thread: thread, running: service.live?.threadID == thread.id)
+                            ThreadRow(thread: thread, running: service.isRunning(thread: thread.id))
                                 .tag(AgentService.Selection.thread(bot: bot.id, id: thread.id))
                         }
                     } else {
@@ -191,8 +191,12 @@ private struct Messages: View {
                     } else if service.live == nil {
                         NewChatPrompt(service: service, bot: bot)
                     }
-                    if let live = service.live, live.threadID == service.thread?.id {
-                        LiveReply(live: live, bot: bot)
+                    if let live = service.live {
+                        LiveReply(live: live, bot: bot, waiting: !service.approvals(forRun: live.runID).isEmpty)
+                        ForEach(service.approvals(forRun: live.runID)) { approval in
+                            ApprovalCard(approval: approval, bot: bot, error: service.approvalErrors[approval.id],
+                                         approve: { service.approve(approval) }, deny: { service.deny(approval) })
+                        }
                     }
                     Color.clear.frame(height: Space.xs).id(Self.bottom)
                 }
@@ -203,6 +207,7 @@ private struct Messages: View {
             .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
             .onChange(of: service.thread?.messages.count) { withAnimation(Motion.quick) { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
             .onChange(of: service.live?.segments) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+            .onChange(of: service.approvals) { withAnimation(Motion.quick) { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
         }
     }
 }
@@ -261,6 +266,7 @@ private struct MessageView: View {
 private struct LiveReply: View {
     let live: AgentService.LiveRun
     let bot: BotDefinition
+    var waiting = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
@@ -280,8 +286,51 @@ private struct LiveReply: View {
 
     private var statusText: String {
         if live.stopping { return "Stopping…" }
+        if waiting { return "Waiting for you to approve or deny…" }
         let steps = live.steps == 0 ? "" : " · \(live.steps) of \(bot.maxSteps) steps"
         return (live.segments.isEmpty ? "Thinking…" : "Working…") + steps
+    }
+}
+
+/// An `ask` bot's write, waiting for the user (M6). The same proposal is in the Inbox.
+private struct ApprovalCard: View {
+    let approval: PendingApproval
+    let bot: BotDefinition
+    let error: String?
+    let approve: () -> Void
+    let deny: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            Label("\(bot.name) asks first", systemImage: "hand.raised")
+                .font(Typo.caption)
+                .foregroundStyle(Palette.textSecondary)
+            Text(approval.title).font(Typo.sectionTitle)
+            if !approval.detail.isEmpty {
+                Text(approval.detail)
+                    .font(Typo.secondary)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(6)
+                    .textSelection(.enabled)
+            }
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(Typo.secondary)
+                    .foregroundStyle(Palette.danger)
+            }
+            HStack(spacing: Space.s) {
+                Button("Approve", action: approve)
+                    .buttonStyle(.borderedProminent)
+                Button("Deny", action: deny)
+                Spacer()
+                Text("Also waiting in the Inbox")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+        }
+        .padding(Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
     }
 }
 

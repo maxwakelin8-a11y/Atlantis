@@ -4,13 +4,10 @@ import Foundation
 public enum Autonomy: String, Sendable, Codable, CaseIterable {
     /// Inbox only (the default): every change is a proposal.
     case suggest
-    /// Approve before applying. Until M6 this behaves like `suggest`.
+    /// Approve before applying: each write pauses the run until the user approves or denies it.
     case ask
     /// Actions on the Settings allow list run without asking. Everything else is still a proposal.
     case act
-
-    /// Gated writes always become Inbox proposals, whatever the allow list says.
-    public var proposalsOnly: Bool { self != .act }
 }
 
 /// Which AI runs the bot (PRD §7b "Runtime").
@@ -32,7 +29,7 @@ public struct BotDefinition: Sendable, Equatable, Codable, Identifiable {
     /// Atlantis MCP tool names (`atlantis_today`), the only tools the bot gets.
     public var tools: [String]
     public var autonomy: Autonomy
-    /// `chat`, `mention`, `task`, `schedule HH:MM` or `event <name>`. Only `chat` works in M5.
+    /// `chat`, `mention`, `task`, `schedule HH:MM` or `event <name>`. Schedules and events come in M7.
     public var triggers: [String]
     /// Tool calls one run may make before it's stopped.
     public var maxSteps: Int
@@ -58,6 +55,10 @@ public struct BotDefinition: Sendable, Equatable, Codable, Identifiable {
     }
 
     public var allowsChat: Bool { triggers.contains("chat") }
+    /// Can be assigned tasks (`[agent:: <id>]`).
+    public var allowsTask: Bool { triggers.contains("task") }
+    /// Can be @mentioned in a doc.
+    public var allowsMention: Bool { triggers.contains("mention") }
 }
 
 /// Everything wrong with a bot file, so the user can fix it in one go.
@@ -236,20 +237,29 @@ public enum BotLibrary {
         }
     }
 
-    /// Writes `agents/school.md` only if it doesn't exist (never overwrites the user's copy).
-    /// Returns true if it wrote the file.
+    /// The default bots, written by `ensureDefaults` when missing.
+    public static var templates: [(id: String, text: String)] {
+        [("school", schoolTemplate), ("coach", coachTemplate), ("builder", builderTemplate)]
+    }
+
+    /// Writes each default bot (`school.md`, `coach.md`, `builder.md`) only if it doesn't exist
+    /// (never overwrites the user's copy). Returns the ids it wrote.
     @discardableResult
-    public static func ensureDefaults(vault: VaultPaths) throws -> Bool {
-        guard FileManager.default.fileExists(atPath: vault.root.path) else { return false }
-        let url = try vault.writableURL(vault.agentsDir.appendingPathComponent("school.md"))
-        guard !FileManager.default.fileExists(atPath: url.path) else { return false }
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        // Create-only: fails rather than replace a file that appeared in the meantime.
-        guard FileManager.default.createFile(atPath: url.path, contents: Data(schoolTemplate.utf8)) else {
-            if FileManager.default.fileExists(atPath: url.path) { return false }
-            throw CocoaError(.fileWriteUnknown)
+    public static func ensureDefaults(vault: VaultPaths) throws -> [String] {
+        guard FileManager.default.fileExists(atPath: vault.root.path) else { return [] }
+        var wrote: [String] = []
+        for (id, text) in templates {
+            let url = try vault.writableURL(vault.agentsDir.appendingPathComponent("\(id).md"))
+            guard !FileManager.default.fileExists(atPath: url.path) else { continue }
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Create-only: fails rather than replace a file that appeared in the meantime.
+            guard FileManager.default.createFile(atPath: url.path, contents: Data(text.utf8)) else {
+                if FileManager.default.fileExists(atPath: url.path) { continue }
+                throw CocoaError(.fileWriteUnknown)
+            }
+            wrote.append(id)
         }
-        return true
+        return wrote
     }
 
     /// The default School bot. Read-only tools plus posting to the Inbox.
@@ -259,7 +269,7 @@ public enum BotLibrary {
     avatar: 🎓
     model: sonnet
     autonomy: suggest
-    triggers: [chat]
+    triggers: [chat, task, mention]
     tools:
       - atlantis_today
       - atlantis_tasks_list
@@ -287,6 +297,68 @@ public enum BotLibrary {
     - Be short and concrete: what's due, what matters most, and one next step.
     - When something should become a task or a reminder, post it to the Inbox so the user can accept
       it. You can't change anything yourself, and you never send messages.
+    - Use Australian spelling and plain words.
+
+    """
+
+    /// Coach: planning and study habits. Reads the day and tasks; task changes are proposals.
+    public static let coachTemplate = """
+    ---
+    name: Coach
+    avatar: 🧭
+    model: sonnet
+    autonomy: suggest
+    triggers: [chat, task]
+    tools:
+      - atlantis_today
+      - atlantis_tasks_list
+      - atlantis_task_add
+      - atlantis_task_update
+      - atlantis_inbox_post
+    budget:
+      max_steps: 10
+      daily_cost_usd: 0.50
+    ---
+
+    You are Coach, a calm planning and study-habits coach for a Year 9 student in Australia.
+
+    - Look at today and their tasks before you suggest anything.
+    - Help them plan: break big tasks into 25–45 minute steps, pick what matters most, and leave
+      room for rest, sport and friends.
+    - Suggest changes (new tasks, subtasks, due dates) with your task tools; they go to the Inbox
+      for the user to accept. Don't pile on work: three good steps beat ten.
+    - Be encouraging and short. Use Australian spelling and plain words.
+
+    """
+
+    /// Builder: help with docs and writing. Reads docs; doc changes are proposals shown as a diff.
+    public static let builderTemplate = """
+    ---
+    name: Builder
+    avatar: 🛠️
+    model: sonnet
+    autonomy: suggest
+    triggers: [chat, mention]
+    tools:
+      - atlantis_docs_list
+      - atlantis_docs_search
+      - atlantis_doc_read
+      - atlantis_doc_write
+      - atlantis_inbox_post
+    budget:
+      max_steps: 10
+      daily_cost_usd: 1.00
+    ---
+
+    You are Builder, a writing helper for a Year 9 student in Australia. You help with their docs:
+    essays, reports, notes and projects.
+
+    - Read the doc before you comment on it. Quote the part you mean.
+    - Give specific, kind feedback: structure first, then clarity, then spelling and grammar.
+    - Keep their voice. Don't write their assessment for them: explain, show a short example, and
+      let them do the writing.
+    - When an edit is clearly wanted, propose the full new text with atlantis_doc_write; the user
+      sees a diff and decides. Change only what you mean to change.
     - Use Australian spelling and plain words.
 
     """

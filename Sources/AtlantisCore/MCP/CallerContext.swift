@@ -11,8 +11,13 @@ public enum MCPCaller {
     @TaskLocal public static var agentToken: String?
     /// The bot making this call, once its token checked out (`AgentToolGate`).
     @TaskLocal public static var agentName: String?
-    /// Gated writes must become Inbox proposals whatever the allow list says (bots that only suggest).
-    @TaskLocal public static var proposalsOnly = false
+    /// The calling bot's autonomy (nil for plain MCP clients). `ToolRegistry` routes gated writes by it.
+    @TaskLocal public static var autonomy: Autonomy?
+    /// The bot run making this call (approval cards show in that run's thread).
+    @TaskLocal public static var agentRunID: String?
+    /// What started the run, e.g. `task:t-ab12cd34` or `doc:Essay/Draft/Intro.md`. Inbox items
+    /// made during the run carry it as `[origin:: …]` so they link back.
+    @TaskLocal public static var agentOrigin: String?
 
     public static let metaKey = "atlantis/client"
     /// `_meta` key for the agent grant token (`ATLANTIS_AGENT_TOKEN` in the helper's environment).

@@ -28,9 +28,11 @@ final class MCPService {
     let allowList = DefaultsActionAllowList()
     /// Per-run tool grants for Atlantis's own bots (M5): a call carrying a bot's token only gets that bot's tools.
     @ObservationIgnored let agentGrants = AgentGrants()
+    /// Writes `ask` bots are waiting on (M6): decided in the thread or the Inbox.
+    @ObservationIgnored let approvals = ApprovalCenter()
 
     init(socketURL: URL = URL(fileURLWithPath: MCPSocketClient.defaultPath)) {
-        let registry = ToolRegistry(inbox: inbox, allowList: allowList)
+        let registry = ToolRegistry(inbox: inbox, allowList: allowList, approvals: approvals)
         CoreTools.register(in: registry, appVersion: Self.appVersion, inbox: inbox)
         self.registry = registry
         let gate = AgentToolGate(inner: registry, grants: agentGrants)

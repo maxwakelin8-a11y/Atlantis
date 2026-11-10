@@ -69,7 +69,7 @@ struct RootView: View {
     @ViewBuilder private var detail: some View {
         switch model.page {
         case .today: TodayPage(model: model)
-        case .tasks: TasksPage(store: model.tasks)
+        case .tasks: TasksPage(store: model.tasks, agents: model.agents, openInbox: { model.page = .inbox })
         case .inbox: InboxPage(store: model.inbox, openDraft: model.openDraftInMessages)
         case .messages: MessagesPage(model: model)
         case .subjects: SubjectsPage(model: model)

@@ -12,6 +12,8 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
     private(set) var problem: String?
     private(set) var webView: WKWebView?
     @ObservationIgnored private(set) var files = WriterFiles(root: AppSettings.writerURL)
+    /// The bots, for @mentions (M6). Set by the app; the page only gets `agents.list` and `agents.ask`.
+    @ObservationIgnored var agents: (@MainActor () -> AgentService)?
 
     /// Creates the web view the first time Docs is shown.
     func start() async {
@@ -98,6 +100,19 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
             return nil
         case "convert":
             return try await DocsExport.convert(ext: str("ext"), base64: str("data"))
+        case "agents.list":
+            // Names only: which bots can be @mentioned. Nothing else about them reaches the page.
+            return (agents?().mentionBots ?? []).map { ["id": $0.id, "name": $0.name, "avatar": $0.avatar] }
+        case "agents.ask":
+            // One request about one doc. The path is checked in Swift (Writer folder only) and the
+            // doc is read from disk; the bot's answer goes to the Inbox, never back into the page.
+            guard let service = agents?() else { throw ToolFailure("Bots aren't available.") }
+            do {
+                let message = try await service.ask(bot: str("bot"), docPath: str("path"), request: str("request"), writer: files)
+                return ["message": message]
+            } catch let failure as ToolFailure {
+                throw DocsBridgeError(message: failure.message)
+            }
         case "open":
             let url = try files.resolve(str("path"))
             if body["reveal"] as? Bool == true {
@@ -162,6 +177,11 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
             throw WriterFiles.Failure.outsideFolder
         }
         return nil
+    }
+
+    struct DocsBridgeError: LocalizedError {
+        var message: String
+        var errorDescription: String? { message }
     }
 
     private nonisolated static func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {

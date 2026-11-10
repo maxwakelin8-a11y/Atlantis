@@ -6,8 +6,8 @@ public typealias ToolHandler = @Sendable (_ arguments: JSONValue) async throws -
 ///
 /// Other milestones register their tools here; the registry decides what runs:
 /// - `read`, `write`, `action`: run.
-/// - `gatedWrite`: run only if the allow list says so (and the tool isn't destructive); otherwise
-///   the call becomes an Inbox proposal and the handler does not run (PRD §8, F5).
+/// - `gatedWrite`: routed by `WriteRoute.for(…)`: run, become an Inbox proposal (the handler does
+///   not run), or, for an `ask` bot, become a proposal the run waits on (PRD §7b, §8, F5).
 public final class ToolRegistry: ToolBackend, @unchecked Sendable {
     private struct Entry {
         var definition: ToolDefinition
@@ -21,10 +21,13 @@ public final class ToolRegistry: ToolBackend, @unchecked Sendable {
     private var order: [String] = []
     private let inbox: any InboxPosting
     private let allowList: any ActionAllowList
+    private let approvals: any ApprovalWaiting
 
-    public init(inbox: any InboxPosting, allowList: any ActionAllowList = NoActionsAllowed()) {
+    public init(inbox: any InboxPosting, allowList: any ActionAllowList = NoActionsAllowed(),
+                approvals: any ApprovalWaiting = NoApprovalWaiting()) {
         self.inbox = inbox
         self.allowList = allowList
+        self.approvals = approvals
     }
 
     /// Adds or replaces a tool. For a gated write, `proposal` builds the Inbox item (validating the
@@ -48,8 +51,14 @@ public final class ToolRegistry: ToolBackend, @unchecked Sendable {
         let entry = lock.withLock { entries[name] }
         guard let entry else { throw JSONRPCError.invalidParams("Unknown tool: \(name)") }
 
-        if entry.definition.kind == .gatedWrite, !isAllowed(entry.definition) {
-            return await propose(entry, arguments: arguments)
+        if entry.definition.kind == .gatedWrite {
+            let route = WriteRoute.for(tool: name, destructive: entry.definition.destructive,
+                                       autonomy: MCPCaller.autonomy, allowList: allowList)
+            switch route {
+            case .run: break
+            case .propose: return await propose(entry, arguments: arguments).result
+            case .askFirst: return await proposeAndWait(entry, arguments: arguments)
+            }
         }
         do {
             return try await entry.handler(arguments)
@@ -60,18 +69,20 @@ public final class ToolRegistry: ToolBackend, @unchecked Sendable {
         }
     }
 
-    private func isAllowed(_ definition: ToolDefinition) -> Bool {
-        !definition.destructive && !MCPCaller.proposalsOnly && allowList.isAllowed(tool: definition.name)
+    private struct Proposed {
+        var result: ToolResult
+        var receipt: InboxReceipt?
+        var proposal: InboxProposal?
     }
 
-    private func propose(_ entry: Entry, arguments: JSONValue) async -> ToolResult {
+    private func propose(_ entry: Entry, arguments: JSONValue) async -> Proposed {
         let name = entry.definition.name
         let proposal: InboxProposal
         if let build = entry.proposal {
             do { proposal = try await build(arguments) } catch let failure as ToolFailure {
-                return .error(failure.message) // bad input is refused, not parked in the Inbox
+                return Proposed(result: .error(failure.message)) // bad input is refused, not parked in the Inbox
             } catch {
-                return .error("\(name) failed: \(error.localizedDescription)")
+                return Proposed(result: .error("\(name) failed: \(error.localizedDescription)"))
             }
         } else {
             let summary = entry.describe?(arguments) ?? "Run \(name)"
@@ -84,11 +95,59 @@ public final class ToolRegistry: ToolBackend, @unchecked Sendable {
         }
         do {
             let receipt = try await inbox.post(proposal)
-            return ToolResult(text: "Not run yet. \(name) needs the user's approval, so it was proposed in the Atlantis Inbox (id \(receipt.id)). Don't retry; the user will decide.")
+            return Proposed(result: ToolResult(text: "Not run yet. \(name) needs the user's approval, so it was proposed in the Atlantis Inbox (id \(receipt.id)). Don't retry; the user will decide."),
+                            receipt: receipt, proposal: proposal)
         } catch let failure as ToolFailure {
-            return .error("\(name) needs the user's approval but couldn't be proposed: \(failure.message)")
+            return Proposed(result: .error("\(name) needs the user's approval but couldn't be proposed: \(failure.message)"))
         } catch {
-            return .error("\(name) needs the user's approval but couldn't be proposed: \(error.localizedDescription)")
+            return Proposed(result: .error("\(name) needs the user's approval but couldn't be proposed: \(error.localizedDescription)"))
+        }
+    }
+
+    /// `ask` bots: post the proposal, then hold the call until the user approves (the Inbox applies
+    /// it), denies, or the wait runs out (it stays in the Inbox).
+    private func proposeAndWait(_ entry: Entry, arguments: JSONValue) async -> ToolResult {
+        let posted = await propose(entry, arguments: arguments)
+        guard let receipt = posted.receipt, let proposal = posted.proposal else { return posted.result }
+        let name = entry.definition.name
+        let outcome = await approvals.wait(for: PendingApproval(
+            id: receipt.id, runID: MCPCaller.agentRunID ?? "", bot: MCPCaller.agentName ?? "", tool: name,
+            title: proposal.title, detail: proposal.body))
+        switch outcome {
+        case .approved:
+            return ToolResult(text: "The user approved this and Atlantis applied it (Inbox id \(receipt.id)).")
+        case .denied:
+            return .error("The user denied this (Inbox id \(receipt.id)). It wasn't applied. Don't try it again; carry on without it.")
+        case .expired:
+            return ToolResult(text: "The user hasn't decided yet. It's waiting in the Atlantis Inbox (id \(receipt.id)) and hasn't been applied. Don't retry; carry on.")
+        case .cancelled:
+            return .error("This run ended before the user decided. It's still waiting in the Atlantis Inbox (id \(receipt.id)).")
+        }
+    }
+}
+
+/// What happens to a gated write (`write*` tools, PRD §8), by who's calling (PRD §7b autonomy):
+///
+/// | Caller | On the Settings allow list | Not on it |
+/// |---|---|---|
+/// | MCP client (no bot) | runs | Inbox proposal |
+/// | bot, `suggest` | Inbox proposal | Inbox proposal |
+/// | bot, `ask` | proposal, run waits for approve/deny | same |
+/// | bot, `act` | runs | Inbox proposal |
+///
+/// Destructive tools never run directly.
+public enum WriteRoute: Equatable, Sendable {
+    case run
+    case propose
+    case askFirst
+
+    public static func `for`(tool: String, destructive: Bool, autonomy: Autonomy?,
+                             allowList: any ActionAllowList) -> WriteRoute {
+        let allowed = !destructive && allowList.isAllowed(tool: tool)
+        switch autonomy {
+        case nil, .act?: return allowed ? .run : .propose
+        case .suggest?: return .propose
+        case .ask?: return .askFirst
         }
     }
 }

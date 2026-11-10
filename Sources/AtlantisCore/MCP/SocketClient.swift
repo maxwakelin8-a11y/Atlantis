@@ -97,11 +97,14 @@ public struct SocketToolBackend: ToolBackend {
     /// limits the tools to that bot's list. Never taken from the MCP client's own messages.
     let agentToken: String?
 
-    public init(client: MCPSocketClient = MCPSocketClient(path: MCPSocketClient.defaultPath), callTimeout: Double = 120,
+    /// A bot's call may wait for the user to approve a write (`ask` bots, `ApprovalCenter`'s 240 s).
+    public static let agentCallTimeout: Double = 300
+
+    public init(client: MCPSocketClient = MCPSocketClient(path: MCPSocketClient.defaultPath), callTimeout: Double? = nil,
                 agentToken: String? = nil) {
         self.client = client
-        self.callTimeout = callTimeout
         self.agentToken = agentToken.flatMap { $0.isEmpty ? nil : $0 }
+        self.callTimeout = callTimeout ?? (self.agentToken == nil ? 120 : Self.agentCallTimeout)
     }
 
     /// `_meta` for a request: the client's name and, for a bot, its grant token.
