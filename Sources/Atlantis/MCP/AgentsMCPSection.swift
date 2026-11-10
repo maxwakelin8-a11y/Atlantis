@@ -1,12 +1,49 @@
 import AppKit
+import AtlantisCore
 import SwiftUI
 
 /// Settings ▸ Agents & MCP: is the server running, and how to connect Claude Code to it.
 struct AgentsMCPSection: View {
     let mcp: MCPService
     @State private var copied: String?
+    @State private var allowed: Set<String>
+
+    init(mcp: MCPService) {
+        self.mcp = mcp
+        _allowed = State(initialValue: mcp.allowList.allowed)
+    }
 
     var body: some View {
+        Group {
+            connection
+            allowList
+        }
+    }
+
+    private var allowList: some View {
+        Section {
+            ForEach(GatedAction.allCases, id: \.rawValue) { action in
+                Toggle(isOn: Binding(
+                    get: { allowed.contains(action.rawValue) },
+                    set: { on in
+                        mcp.allowList.setAllowed(on, action: action)
+                        allowed = mcp.allowList.allowed
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        Text(action.label)
+                        Text(action.detail).font(Typo.caption).foregroundStyle(Palette.textSecondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Agents can do without asking")
+        } footer: {
+            Text("Everything here is off until you turn it on. When it's off, the agent's request waits in the Inbox and runs when you accept it. Agents can never send SEQTA messages, and they only read docs inside your Writer folder.")
+        }
+    }
+
+    private var connection: some View {
         Section {
             LabeledContent("Server") {
                 Text(statusText)

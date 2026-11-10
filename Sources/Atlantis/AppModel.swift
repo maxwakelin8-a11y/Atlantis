@@ -103,9 +103,10 @@ final class AppModel {
     var inbox: InboxStore {
         if let inboxStorage { return inboxStorage }
         let store = InboxStore(vault: vault)
+        // Accepting a task or doc proposal applies it (see InboxActions in AtlantisCore).
         store.onAccept = { [weak self] item in
             guard let self else { return }
-            try InboxActions(tasks: self.tasks).apply(item)
+            try InboxActions(tasks: self.tasks, writerRoot: { AppSettings.writerURL }).apply(item)
         }
         store.start()
         inboxStorage = store

@@ -22,14 +22,41 @@ final class MCPService {
     @ObservationIgnored let registry: ToolRegistry
     @ObservationIgnored private let server: MCPSocketServer
 
-    /// Where proposals go. The Inbox store replaces `InboxUnavailable` when it is wired in.
-    static let inbox: any InboxPosting = InboxUnavailable()
+    /// Where proposals go: the app's Inbox store, once `configure(model:)` has connected it.
+    @ObservationIgnored let inbox = InboxBridge()
+    /// Which `write*` actions run without asking (Settings ▸ Agents & MCP).
+    let allowList = DefaultsActionAllowList()
 
-    init(socketURL: URL = AppSupport.sockets.appendingPathComponent("mcp.sock")) {
-        let registry = ToolRegistry(inbox: Self.inbox, allowList: NoActionsAllowed())
-        CoreTools.register(in: registry, appVersion: Self.appVersion, inbox: Self.inbox)
+    init(socketURL: URL = URL(fileURLWithPath: MCPSocketClient.defaultPath)) {
+        let registry = ToolRegistry(inbox: inbox, allowList: allowList)
+        CoreTools.register(in: registry, appVersion: Self.appVersion, inbox: inbox)
         self.registry = registry
         server = MCPSocketServer(socketURL: socketURL, handler: MCPProtocolHandler(backend: registry))
+    }
+
+    /// Connects the tools to the app's stores. Call once, before `start()`.
+    func configure(model: AppModel) {
+        inbox.provider = { @MainActor in model.inbox }
+        let context = MCPToolContext(
+            vault: { VaultPaths(root: AppSettings.vaultURL) },
+            writerRoot: { AppSettings.writerURL },
+            cache: model.seqtaSync.cache,
+            tasks: { model.tasks },
+            inbox: inbox,
+            refreshSeqta: {
+                let sync = model.seqtaSync
+                await sync.refresh(reason: .manual)
+                switch await sync.state {
+                case .idle: return SeqtaRefreshOutcome(ok: true, message: "Synced. " + (await sync.lastReportSummary ?? "Saved data is up to date."))
+                case .needsSignIn: return SeqtaRefreshOutcome(ok: false, message: "The user isn't signed in to SEQTA. They need to sign in from Atlantis, then try again.")
+                case .failed(let reason): return SeqtaRefreshOutcome(ok: false, message: "Sync failed: \(reason)")
+                case .syncing: return SeqtaRefreshOutcome(ok: true, message: "A sync is still running. Read again in a minute.")
+                }
+            },
+            exportDocument: { html, format, target in
+                try await DocsExport.export(html: html, format: format, to: target)
+            })
+        AtlantisTools.register(in: registry, context: context)
     }
 
     var socketPath: String { server.socketURL.path }
@@ -80,5 +107,23 @@ final class MCPService {
         let short = info?["CFBundleShortVersionString"] as? String ?? "dev"
         let build = info?["CFBundleVersion"] as? String ?? "0"
         return "\(short) (\(build))"
+    }
+}
+
+/// Hands proposals to the Inbox store, which lives on the main actor and is created on first use.
+final class InboxBridge: InboxPosting, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: (@MainActor @Sendable () -> InboxStore)?
+
+    var provider: (@MainActor @Sendable () -> InboxStore)? {
+        get { lock.withLock { storage } }
+        set { lock.withLock { storage = newValue } }
+    }
+
+    func post(_ proposal: InboxProposal) async throws -> InboxReceipt {
+        guard let provider else { throw ToolFailure("The Inbox isn't ready yet.") }
+        let item = proposal.makeItem()
+        let posted = try await MainActor.run { provider() }.post(item)
+        return InboxReceipt(id: posted.id)
     }
 }

@@ -13,6 +13,7 @@ public final class ToolRegistry: ToolBackend, @unchecked Sendable {
         var definition: ToolDefinition
         var handler: ToolHandler
         var describe: (@Sendable (JSONValue) -> String)?
+        var proposal: (@Sendable (JSONValue) async throws -> InboxProposal)?
     }
 
     private let lock = NSLock()
@@ -26,13 +27,16 @@ public final class ToolRegistry: ToolBackend, @unchecked Sendable {
         self.allowList = allowList
     }
 
-    /// Adds or replaces a tool. `describe` makes the Inbox line for a gated write.
+    /// Adds or replaces a tool. For a gated write, `proposal` builds the Inbox item (validating the
+    /// arguments, and throwing `ToolFailure` if they're bad). Without it, `describe` gives a one-line
+    /// summary and the proposal just records the tool name and arguments.
     public func register(_ definition: ToolDefinition,
                          describe: (@Sendable (JSONValue) -> String)? = nil,
+                         proposal: (@Sendable (JSONValue) async throws -> InboxProposal)? = nil,
                          handler: @escaping ToolHandler) {
         lock.withLock {
             if entries[definition.name] == nil { order.append(definition.name) }
-            entries[definition.name] = Entry(definition: definition, handler: handler, describe: describe)
+            entries[definition.name] = Entry(definition: definition, handler: handler, describe: describe, proposal: proposal)
         }
     }
 
@@ -62,13 +66,22 @@ public final class ToolRegistry: ToolBackend, @unchecked Sendable {
 
     private func propose(_ entry: Entry, arguments: JSONValue) async -> ToolResult {
         let name = entry.definition.name
-        let summary = entry.describe?(arguments) ?? "Run \(name)"
-        let proposal = InboxProposal(
-            kind: "mcp.\(name)",
-            title: String(summary.prefix(200)),
-            body: "An agent asked to run \(name). It hasn't run; accept it in the Inbox to run it.",
-            payload: ["tool": .string(name), "arguments": arguments]
-        )
+        let proposal: InboxProposal
+        if let build = entry.proposal {
+            do { proposal = try await build(arguments) } catch let failure as ToolFailure {
+                return .error(failure.message) // bad input is refused, not parked in the Inbox
+            } catch {
+                return .error("\(name) failed: \(error.localizedDescription)")
+            }
+        } else {
+            let summary = entry.describe?(arguments) ?? "Run \(name)"
+            proposal = InboxProposal(
+                kind: "mcp.\(name)",
+                title: String(summary.prefix(200)),
+                body: "An agent asked to run \(name). It hasn't run; accept it in the Inbox to run it.",
+                payload: ["tool": .string(name), "arguments": arguments]
+            )
+        }
         do {
             let receipt = try await inbox.post(proposal)
             return ToolResult(text: "Not run yet. \(name) needs the user's approval, so it was proposed in the Atlantis Inbox (id \(receipt.id)). Don't retry; the user will decide.")
@@ -108,7 +121,7 @@ public enum CoreTools {
         )) { args in
             let title = try args.requireString("title", maxLength: 500)
             let body = try args.optionalString("body") ?? ""
-            let receipt = try await inbox.post(InboxProposal(kind: "agent.note", title: title, body: body))
+            let receipt = try await inbox.post(InboxProposal(kind: "note", title: title, body: body))
             return ToolResult(text: "Posted to the Inbox (id \(receipt.id)).")
         }
     }

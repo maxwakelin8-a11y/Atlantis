@@ -10,6 +10,7 @@ public struct MCPProtocolHandler: Sendable {
     public let backend: any ToolBackend
     public let serverName: String
     public let serverVersion: String
+    private let clientInfo = MCPClientInfo()
 
     public init(backend: any ToolBackend, serverName: String = "atlantis", serverVersion: String = MCPInfo.version) {
         self.backend = backend
@@ -48,6 +49,7 @@ public struct MCPProtocolHandler: Sendable {
             guard let params = request.params?.objectValue, let requested = params["protocolVersion"]?.stringValue else {
                 throw JSONRPCError.invalidParams("initialize needs params.protocolVersion")
             }
+            clientInfo.set(MCPCaller.sanitized(params["clientInfo"]?["name"]?.stringValue))
             let version = Self.supportedVersions.contains(requested) ? requested : Self.protocolVersion
             return [
                 "protocolVersion": .string(version),
@@ -72,7 +74,11 @@ public struct MCPProtocolHandler: Sendable {
             guard arguments.objectValue != nil || arguments.isNull else {
                 throw JSONRPCError.invalidParams("params.arguments must be an object")
             }
-            let result = try await backend.callTool(name: name, arguments: arguments.isNull ? [:] : arguments)
+            // The helper learned the client's name at `initialize`; the app hears it in `_meta`.
+            let client = clientInfo.value ?? MCPCaller.sanitized(params["_meta"]?[MCPCaller.metaKey]?.stringValue)
+            let result = try await MCPCaller.$clientName.withValue(client) {
+                try await backend.callTool(name: name, arguments: arguments.isNull ? [:] : arguments)
+            }
             return try JSONValue.parse(JSONEncoder().encode(result))
         default:
             if request.method.hasPrefix("notifications/") { return .null } // acknowledged silently

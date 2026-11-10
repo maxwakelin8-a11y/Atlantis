@@ -47,6 +47,9 @@ struct DebugOptions {
     /// `-debugAfterSync YES`: run the after-sync work (Inbox proposals, daily note, plan) on
     /// the cache without syncing, print a line and quit. Use it with `-debugSeqtaCache`.
     var afterSync = false
+    /// `-debugAcceptInbox YES`: shortly after launch, accept every pending Inbox item (as clicking
+    /// Accept would), print a line and quit. For the MCP end-to-end check.
+    var acceptInbox = false
     /// `-debugNow 10:05`: pretend it is this time today (the Today page's now line, Next up).
     var clockOffset: TimeInterval = 0
 
@@ -82,6 +85,7 @@ struct DebugOptions {
             (args[key] as? String).map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
         }
         options.seqtaCacheURL = options.seqtaCache
+        options.acceptInbox = (args["debugAcceptInbox"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.afterSync = (args["debugAfterSync"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.planURL = path("debugPlanPath")
         if let text = args["debugNow"] as? String, let minutes = TodayTime.minutes(text) {

@@ -34,11 +34,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 fflush(stdout)
             }
         }
+        model.mcp.configure(model: model)
         model.mcp.start() // background queue; idle afterwards
         if debug.afterSync {
             Task { [model] in
                 await model.debugRunAfterSync()
                 print("After-sync: inbox \(model.inbox.items.count) items, tasks \(model.tasks.tasks.count)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if debug.acceptInbox {
+            Task { [model] in
+                let inbox = model.inbox
+                for item in inbox.pending { try? await inbox.accept(id: item.id) }
+                print("Accepted: inbox pending \(inbox.pending.count), tasks \(model.tasks.tasks.count)")
                 fflush(stdout)
                 NSApp.terminate(nil)
             }

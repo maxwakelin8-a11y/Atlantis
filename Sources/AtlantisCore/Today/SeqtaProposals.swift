@@ -98,7 +98,8 @@ public enum InboxTaskActions {
     }
 
     /// Applies a `task.update` proposal: `title` renames, `notes` replaces the notes, `status`
-    /// `done`/`open` ticks or reopens, every other field is set (an empty value removes it).
+    /// `done`/`open` ticks or reopens (`cancelled` cancels), every other field is set (an empty value or
+    /// `none` removes it).
     public static func apply(_ item: InboxItem, to task: inout TaskItem, today: DayStamp) {
         for field in item.fields {
             switch field.key.lowercased() {
@@ -109,9 +110,12 @@ public enum InboxTaskActions {
                 switch field.value.lowercased() {
                 case "done", "x": task.markDone(on: today)
                 case "open", "todo": task.reopen()
+                case "cancelled", "canceled": task.status = "-"
                 default: break
                 }
-            default: task.setField(field.key, field.value.isEmpty ? nil : field.value)
+            default:
+                let clears = field.value.isEmpty || field.value.lowercased() == "none"
+                task.setField(field.key, clears ? nil : field.value)
             }
         }
     }

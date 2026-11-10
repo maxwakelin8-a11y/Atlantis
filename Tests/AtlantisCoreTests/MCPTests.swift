@@ -252,7 +252,7 @@ private func tempSocketURL() -> URL {
         let proposals = await inbox.proposals
         #expect(proposals.map(\.title) == ["Look at this"])
         #expect(proposals[0].body == "details")
-        #expect(proposals[0].kind == "agent.note")
+        #expect(proposals[0].kind == "note")
     }
 
     @Test func failedProposalIsReportedAsAnError() async throws {

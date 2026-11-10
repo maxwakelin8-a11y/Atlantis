@@ -26,7 +26,12 @@ public struct MCPSocketClient: Sendable {
 
     public init(path: String) { self.path = path }
 
-    public static var defaultPath: String { AppSupport.sockets.appendingPathComponent("mcp.sock").path }
+    /// The app's socket. `ATLANTIS_MCP_SOCKET` points both the app and the helper somewhere else
+    /// (for testing a debug build next to the real app); it's only read at launch.
+    public static var defaultPath: String {
+        if let override = ProcessInfo.processInfo.environment["ATLANTIS_MCP_SOCKET"], override.hasPrefix("/") { return override }
+        return AppSupport.sockets.appendingPathComponent("mcp.sock").path
+    }
 
     /// Sends one JSON message and returns the reply bytes. Nil means the app closed without replying (notification).
     public func send(_ message: Data, timeout: Double = 30) async throws -> Data? {
@@ -111,7 +116,9 @@ public struct SocketToolBackend: ToolBackend {
 
     public func callTool(name: String, arguments: JSONValue) async throws -> ToolResult {
         do {
-            let result = try await request(method: "tools/call", params: ["name": .string(name), "arguments": arguments], timeout: callTimeout)
+            var params: JSONValue = ["name": .string(name), "arguments": arguments]
+            if let client = MCPCaller.clientName { params = ["name": .string(name), "arguments": arguments, "_meta": [MCPCaller.metaKey: .string(client)]] }
+            let result = try await request(method: "tools/call", params: params, timeout: callTimeout)
             return try JSONDecoder().decode(ToolResult.self, from: result.encoded())
         } catch MCPSocketError.appNotRunning {
             return .error(Self.openAtlantisMessage)
