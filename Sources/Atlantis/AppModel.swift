@@ -116,6 +116,17 @@ final class AppModel {
     /// The local MCP server agents talk to (PRD §8). Started at launch, stopped at quit.
     let mcp = MCPService()
 
+    /// Created the first time the Agents page is shown (PRD §7b). Nothing runs until a chat starts.
+    private(set) var agentsIfStarted: AgentService?
+
+    var agents: AgentService {
+        if let agentsIfStarted { return agentsIfStarted }
+        let offset = clockOffset
+        let service = AgentService(mcp: mcp, now: { Date().addingTimeInterval(offset) })
+        agentsIfStarted = service
+        return service
+    }
+
     /// How long a hidden SEQTA page stays loaded.
     @ObservationIgnored var seqtaUnloadAfter: Duration = .seconds(600)
 

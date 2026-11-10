@@ -60,5 +60,11 @@ enum AppSettings {
         return home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/LifeOS", isDirectory: true)
     }
 
+    /// The Claude Code CLI bots run on (Settings ▸ Bots). Empty: look in the usual places.
+    static var claudePath: String? {
+        get { defaults.string(forKey: "claudePath").flatMap { $0.isEmpty ? nil : $0 } }
+        set { defaults.set(newValue ?? "", forKey: "claudePath") }
+    }
+
     private static var home: URL { FileManager.default.homeDirectoryForCurrentUser }
 }

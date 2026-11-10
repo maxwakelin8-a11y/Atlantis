@@ -73,7 +73,7 @@ struct RootView: View {
         case .inbox: InboxPage(store: model.inbox, openDraft: model.openDraftInMessages)
         case .messages: MessagesPage(model: model)
         case .subjects: SubjectsPage(model: model)
-        case .agents: PlaceholderPage(page: .agents, note: "Your bot team will show here (M5).")
+        case .agents: AgentsPage(service: model.agents)
         case .docs: DocsPage(docs: model.docs)
         case .seqta: SeqtaPage(seqta: model.seqta)
         case .settings: SettingsPage(model: model)

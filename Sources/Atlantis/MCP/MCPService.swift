@@ -26,12 +26,15 @@ final class MCPService {
     @ObservationIgnored let inbox = InboxBridge()
     /// Which `write*` actions run without asking (Settings ▸ Agents & MCP).
     let allowList = DefaultsActionAllowList()
+    /// Per-run tool grants for Atlantis's own bots (M5): a call carrying a bot's token only gets that bot's tools.
+    @ObservationIgnored let agentGrants = AgentGrants()
 
     init(socketURL: URL = URL(fileURLWithPath: MCPSocketClient.defaultPath)) {
         let registry = ToolRegistry(inbox: inbox, allowList: allowList)
         CoreTools.register(in: registry, appVersion: Self.appVersion, inbox: inbox)
         self.registry = registry
-        server = MCPSocketServer(socketURL: socketURL, handler: MCPProtocolHandler(backend: registry))
+        let gate = AgentToolGate(inner: registry, grants: agentGrants)
+        server = MCPSocketServer(socketURL: socketURL, handler: MCPProtocolHandler(backend: gate))
     }
 
     /// Connects the tools to the app's stores. Call once, before `start()`.
@@ -97,6 +100,11 @@ final class MCPService {
 
     var helperExists: Bool {
         helperURL.map { FileManager.default.isExecutableFile(atPath: $0.path) } ?? false
+    }
+
+    /// The bundled agent daemon, beside the helper.
+    var agentDaemonURL: URL? {
+        Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("atlantis-agentd")
     }
 
     var claudeCommand: String? { helperURL.map { MCPSetup.claudeCommand(helperPath: $0.path) } }

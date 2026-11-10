@@ -52,6 +52,11 @@ struct DebugOptions {
     var acceptInbox = false
     /// `-debugNow 10:05`: pretend it is this time today (the Today page's now line, Next up).
     var clockOffset: TimeInterval = 0
+    /// `-debugAgentAsk "What's due?"`: send this to a bot in a new thread, print the outcome and quit.
+    /// Use it with `-vaultPath` on a made-up vault. Real runs cost real usage.
+    var agentAsk: String?
+    /// `-debugAgentBot school`: which bot `-debugAgentAsk` talks to.
+    var agentBot = "school"
 
     static func fromArguments(_ defaults: UserDefaults = .standard) -> DebugOptions {
         let args = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
@@ -91,6 +96,8 @@ struct DebugOptions {
         if let text = args["debugNow"] as? String, let minutes = TodayTime.minutes(text) {
             options.clockOffset = TimeInterval(minutes - TodayTime.minuteOfDay(Date())) * 60
         }
+        options.agentAsk = args["debugAgentAsk"] as? String
+        if let bot = args["debugAgentBot"] as? String { options.agentBot = bot }
         options.showHUD = (args["debugHUD"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.pageSequence = ((args["debugPageSequence"] as? String) ?? "")
             .split(separator: ",")

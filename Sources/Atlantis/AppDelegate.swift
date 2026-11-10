@@ -53,6 +53,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 NSApp.terminate(nil)
             }
         }
+        if let question = debug.agentAsk {
+            Task { [model, debug] in
+                model.page = .agents
+                let outcome = await model.agents.debugAsk(question, bot: debug.agentBot)
+                print(outcome)
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
         if debug.networkCheck { Task { await NetworkCheck.run() } }
         if debug.seqtaSync {
             Task { [model] in
@@ -137,6 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        model.agentsIfStarted?.shutdown()
         model.mcp.stop()
     }
 
