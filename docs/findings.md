@@ -47,3 +47,17 @@ Reusable lessons (dated bullets).
 - Hidden-window `-debugSnapshot` doesn't paint late DOM changes in WebKit (page reports `hidden`,
   0×0 viewport); screenshot web UI in headless Chromium with sample data instead.
 - Stacked PRs: merge with merge commits (not squash) so later PRs' diffs shrink by themselves.
+
+## 2026-11-10
+- Claude Code CLI 2.1.x headless lockdown: `--tools ""` removes every built-in tool, and
+  `--setting-sources ""` is needed too, or the user's plugins still run SessionStart hooks that
+  inject context (the Vercel plugin did). `--strict-mcp-config` keeps other MCP servers out.
+  Check the lockdown at runtime: the `system/init` line lists the tools the model will get.
+- `claude -p` with a stream-json input and stdin at EOF exits without calling the API, so flags
+  can be checked for typos for free (an unknown flag errors at once). `--max-turns` works though
+  `--help` doesn't list it.
+- A killed child's grandchildren can keep its stdout pipe open, so a blocking read never sees
+  EOF. Read with `poll()` on the pipe plus a wake pipe written by `terminationHandler`.
+- `-debugSnapshot` falls back to `cacheDisplay` when the display is asleep (screencapture gives
+  black). That draws no window background (dark mode looked white) and no sidebar materials; the
+  fallback now fills the window background first. The main sidebar still comes out blank.

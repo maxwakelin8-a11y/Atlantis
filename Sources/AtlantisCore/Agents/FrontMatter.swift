@@ -92,7 +92,7 @@ public enum FrontMatter {
                 continue
             }
 
-            guard let p = parent else { throw ParseError(line: number, message: "unexpected indent") }
+            guard parent != nil else { throw ParseError(line: number, message: "unexpected indent") }
             if content.hasPrefix("- ") || content == "-" {
                 let item = try scalar(String(content.dropFirst()).trimmingCharacters(in: .whitespaces), line: number)
                 if var n = nested, indent > n.indent {
@@ -110,7 +110,6 @@ public enum FrontMatter {
                 throw ParseError(line: number, message: "too deeply nested")
             }
             closeNested()
-            _ = p
             let (key, rest) = try keyValue(content, line: number)
             if rest.isEmpty {
                 nested = (key, indent, [])
