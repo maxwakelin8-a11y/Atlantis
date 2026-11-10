@@ -20,9 +20,9 @@ cloud backend and no other users.
   base (all sidebar pages, tokens in `Sources/Atlantis/Design`, `VaultPaths`/`TextFile`) → #6 Inbox,
   #7 SEQTA sync engine + cache, #8 Tasks, #9 MCP plumbing (`atlantis-mcp`), #10 Docs search +
   pasted images (M1 done).
-- `p1/integration` merges all of the above (tests: 208 Swift, 68 web).
-- In progress (helpers): M3b Today + SEQTA→Inbox + daily note; M4 MCP tools + allow list;
-  M4b Subjects + Messages. Then Phase 2 (M5 agent runtime, M6, M7).
+- Phase 1 built (2026-11-10): + #11 Today/SEQTA→Inbox/daily note, #12 Subjects + Messages,
+  #13 MCP tools + allow list. `p1/integration` merges everything (282 Swift tests).
+- In progress: Phase 2, M5 agent runtime (`atlantis-agentd`, School bot), then M6, M7.
 - Not live-tested yet: SEQTA sync against real SEQTA (needs the user signed in).
 - Left from M0: the Gallery screen waits for the user's design.
 

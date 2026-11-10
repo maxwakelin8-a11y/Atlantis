@@ -117,3 +117,14 @@
   resumed. `npm ci` hangs/fails in fresh worktrees (certificate error), so helpers copy
   `Resources/DocsEditor`/`node_modules` from the main checkout.
 - Next: Today page, MCP tools, Subjects + Messages; then Phase 2 bots.
+
+## 2026-11-10: Phase 1 built
+- Landed: Today + SEQTA→Inbox + daily-note machine block + plan.json (#11), Subjects + Messages
+  with user-only send behind a confirm (#12), all PRD §8 MCP tools + write allow list (#13).
+  `p1/integration`: 282 Swift tests pass, app builds.
+- Problems: API rate limits / errors stopped helpers 4 times; partial work was committed as WIP
+  and resumed. Merge conflicts were only in AppModel/AppDelegate/DebugOptions wiring and one
+  duplicated token, all resolved by hand.
+- Needs a live check by the user: SEQTA sync, message bodies, file downloads, sending, dark mode
+  of Subjects/Messages headers.
+- Next: Phase 2 (M5 agent runtime + School bot).
