@@ -6,7 +6,11 @@ import os
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let debug = DebugOptions.fromArguments()
     private lazy var model: AppModel = {
-        let model = AppModel(page: debug.page)
+        let model = AppModel(page: debug.page,
+                             seqtaCache: debug.seqtaCacheURL.map { SeqtaCache(root: $0) } ?? SeqtaCache(),
+                             planURL: debug.planURL ?? PlanFile.defaultURL,
+                             clockOffset: debug.clockOffset)
+        if debug.seqtaCacheURL != nil { model.seqtaSync.autoSyncEnabled = false }
         if let seconds = debug.seqtaUnloadAfter { model.seqtaUnloadAfter = .seconds(seconds) }
         return model
     }()
@@ -29,6 +33,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 fflush(stdout)
             }
         }
+        if debug.afterSync {
+            Task { [model] in
+                await model.debugRunAfterSync()
+                print("After-sync: inbox \(model.inbox.items.count) items, tasks \(model.tasks.tasks.count)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
         if debug.networkCheck { Task { await NetworkCheck.run() } }
         if debug.seqtaSync {
             Task { [model] in
@@ -42,7 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
         // Once-a-day sync at launch, and again on wake if today's hasn't run (no timers).
         // After the first frame, so launch stays fast.
-        DispatchQueue.main.async { [model] in model.seqtaSync.startAutoSync() }
+        DispatchQueue.main.async { [model] in
+            model.startToday()
+            model.seqtaSync.startAutoSync()
+        }
         if debug.showHUD { model.showsHUD = true }
         if let probe = ProcessInfo.processInfo.environment["ATLANTIS_DOCS_PROBE"] {
             // Debug: run JS in the Docs page after it loads, print the result (and a snapshot).

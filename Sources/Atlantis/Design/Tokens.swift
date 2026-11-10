@@ -31,6 +31,18 @@ enum Size {
     static let avatar: CGFloat = 28
     /// Width of a side panel (inspector, task detail).
     static let sidePanel: CGFloat = 300
+    /// Today's right-hand column (Next up, tasks, Top 3).
+    static let todaySide: CGFloat = 340
+    /// Time column on a timeline ("08:55").
+    static let timeColumn: CGFloat = 44
+    /// Subject colour bar beside a class.
+    static let subjectBar: CGFloat = 4
+    /// Small dot (subject colour in a list).
+    static let dot: CGFloat = 8
+    /// The "now" line on a timeline.
+    static let nowLine: CGFloat = 1.5
+    /// Narrowest card in a grid of cards (assessments due).
+    static let cardMinWidth: CGFloat = 200
 }
 
 enum Typo {
@@ -67,6 +79,18 @@ enum Palette {
     }
     /// Fallback subject colour when SEQTA gives none.
     static let subjectFallback = Color.gray
+    /// A subject's colour from SEQTA (`#rrggbb`), or the fallback.
+    static func subject(_ hex: String?) -> Color {
+        guard var text = hex?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return subjectFallback }
+        if text.hasPrefix("#") { text.removeFirst() }
+        guard text.count == 6, let value = UInt32(text, radix: 16) else { return subjectFallback }
+        return Color(red: Double((value >> 16) & 0xff) / 255, green: Double((value >> 8) & 0xff) / 255,
+                     blue: Double(value & 0xff) / 255)
+    }
+    /// Light tint behind a highlighted row (the class happening now).
+    static let highlightOpacity = 0.10
+    /// How much a finished class fades.
+    static let pastOpacity = 0.55
 }
 
 enum Motion {

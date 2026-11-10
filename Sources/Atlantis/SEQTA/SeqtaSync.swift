@@ -35,6 +35,11 @@ final class SeqtaSync {
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
     /// Replaceable so tests of the app side could run without a web view.
     @ObservationIgnored var makeTransport: @MainActor () -> any SeqtaTransport = { SeqtaWebTransport() }
+    /// Runs after every sync that wrote the cache: Today reloads, new homework and assessments
+    /// go to the Inbox, and the daily note's machine block fills in (wired in `AppModel`).
+    @ObservationIgnored var onSynced: @MainActor (SeqtaSyncReport) async -> Void = { _ in }
+    /// When false, `startAutoSync` does nothing (debug runs on a made-up cache).
+    @ObservationIgnored var autoSyncEnabled = true
 
     init(cache: SeqtaCache = SeqtaCache()) {
         self.cache = cache
@@ -73,7 +78,7 @@ final class SeqtaSync {
     /// Hooks the morning sync to app launch (now) and to the Mac waking from sleep. Both are
     /// events, not timers: between them the engine does no work.
     func startAutoSync() {
-        guard wakeObserver == nil else { return }
+        guard autoSyncEnabled, wakeObserver == nil else { return }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -97,6 +102,7 @@ final class SeqtaSync {
             state = .idle
             Log.seqta.info("SEQTA sync (\(reason.rawValue, privacy: .public)): \(report.summary, privacy: .public); \(report.requestCount) requests")
             lastReportSummary = report.summary
+            await onSynced(report)
         } catch let error as SeqtaSyncError {
             state = error == .notSignedIn ? .needsSignIn : .failed(error.message)
             Log.seqta.error("SEQTA sync (\(reason.rawValue, privacy: .public)) stopped: \(error.message, privacy: .public)")

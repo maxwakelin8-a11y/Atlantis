@@ -29,6 +29,18 @@ struct DebugOptions {
     /// `-debugTaskSelect 2`: select the nth task (1-based) of that view, so its side panel shows.
     var taskSelect: Int?
 
+    /// `-debugSeqtaCache /path`: read (and sync into) this SEQTA cache folder instead of the real
+    /// one, and skip the automatic morning sync. For screenshots on made-up data
+    /// (`scripts/today-fixture.sh` makes one).
+    var seqtaCacheURL: URL?
+    /// `-debugPlanPath /path/plan.json`: write plan.json here instead of the shared folder.
+    var planURL: URL?
+    /// `-debugAfterSync YES`: run the after-sync work (Inbox proposals, daily note, plan) on
+    /// the cache without syncing, print a line and quit. Use it with `-debugSeqtaCache`.
+    var afterSync = false
+    /// `-debugNow 10:05`: pretend it is this time today (the Today page's now line, Next up).
+    var clockOffset: TimeInterval = 0
+
     static func fromArguments(_ defaults: UserDefaults = .standard) -> DebugOptions {
         let args = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var options = DebugOptions()
@@ -51,6 +63,15 @@ struct DebugOptions {
             .split(separator: ":").map { URL(fileURLWithPath: (String($0) as NSString).expandingTildeInPath) }
         options.tasksView = (args["debugTasksView"] as? String).flatMap(TaskListKind.init(rawValue:))
         options.taskSelect = (args["debugTaskSelect"] as? String).flatMap(Int.init)
+        func path(_ key: String) -> URL? {
+            (args[key] as? String).map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        }
+        options.seqtaCacheURL = path("debugSeqtaCache")
+        options.afterSync = (args["debugAfterSync"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
+        options.planURL = path("debugPlanPath")
+        if let text = args["debugNow"] as? String, let minutes = TodayTime.minutes(text) {
+            options.clockOffset = TimeInterval(minutes - TodayTime.minuteOfDay(Date())) * 60
+        }
         options.showHUD = (args["debugHUD"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.pageSequence = ((args["debugPageSequence"] as? String) ?? "")
             .split(separator: ",")
@@ -76,6 +97,15 @@ enum Snapshot {
         process.arguments = ["-x", "-o", "-l", String(window.windowNumber), url.path]
         try process.run()
         process.waitUntilExit()
+        if process.terminationStatus != 0, let contentView = window.contentView {
+            // The screen is locked or asleep: draw the views instead (no sidebar material).
+            guard let rep = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            contentView.cacheDisplay(in: contentView.bounds, to: rep)
+            try rep.representation(using: .png, properties: [:])?.write(to: url, options: .atomic)
+            return
+        }
         guard process.terminationStatus == 0, let captured = NSImage(contentsOf: url),
               let contentView = window.contentView,
               let base = captured.cgImage(forProposedRect: nil, context: nil, hints: nil) else {

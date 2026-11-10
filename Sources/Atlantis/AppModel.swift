@@ -29,7 +29,16 @@ final class AppModel {
     private(set) var seqtaIfStarted: SeqtaController?
 
     /// The SEQTA sync engine (PRD §7d). Cheap until a sync runs: it only reads `meta.json`.
-    let seqtaSync = SeqtaSync()
+    let seqtaSync: SeqtaSync
+
+    /// Today's SEQTA data, Top 3 and plan (PRD F1).
+    let today: TodayStore
+
+    /// The clock pages use. Real time, shifted by `-debugNow` for screenshots.
+    @ObservationIgnored let clockOffset: TimeInterval
+    func now() -> Date { Date().addingTimeInterval(clockOffset) }
+
+    private var vault: VaultPaths { VaultPaths(root: AppSettings.vaultURL) }
 
     /// Created the first time Docs is shown, then kept warm (the one warm Docs editor, PRD §17).
     private(set) var docsIfStarted: DocsController?
@@ -47,7 +56,8 @@ final class AppModel {
 
     var tasks: TaskStore {
         if let tasksIfStarted { return tasksIfStarted }
-        let store = TaskStore(vault: VaultPaths(root: AppSettings.vaultURL))
+        let offset = clockOffset
+        let store = TaskStore(vault: vault, now: { Date().addingTimeInterval(offset) })
         tasksIfStarted = store
         return store
     }
@@ -57,7 +67,11 @@ final class AppModel {
     /// Created the first time it's needed (the sidebar badge or the Inbox page), then kept.
     var inbox: InboxStore {
         if let inboxStorage { return inboxStorage }
-        let store = InboxStore(vault: VaultPaths(root: AppSettings.vaultURL))
+        let store = InboxStore(vault: vault)
+        store.onAccept = { [weak self] item in
+            guard let self else { return }
+            try InboxActions(tasks: self.tasks).apply(item)
+        }
         store.start()
         inboxStorage = store
         return store
@@ -74,9 +88,67 @@ final class AppModel {
         return controller
     }
 
-    init(page: Page? = nil) {
+    init(page: Page? = nil, seqtaCache: SeqtaCache = SeqtaCache(), planURL: URL = PlanFile.defaultURL,
+         clockOffset: TimeInterval = 0) {
         let saved = UserDefaults.standard.string(forKey: Self.lastPageKey).flatMap(Page.init(rawValue:))
         self.page = page ?? saved ?? .today
+        self.clockOffset = clockOffset
+        seqtaSync = SeqtaSync(cache: seqtaCache)
+        today = TodayStore(cache: seqtaCache, vault: VaultPaths(root: AppSettings.vaultURL), planURL: planURL,
+                           now: { Date().addingTimeInterval(clockOffset) })
+        seqtaSync.onSynced = { [weak self] _ in await self?.didSync() }
+    }
+
+    // MARK: Today wiring
+
+    /// Starts Today's stores and keeps `plan.json` current. Called once, after the first frame.
+    func startToday() {
+        today.start()
+        tasks.start()
+        writePlanAndObserve()
+    }
+
+    /// Writes the plan now and again whenever tasks or the cache change (observation, no timers).
+    private func writePlanAndObserve() {
+        withObservationTracking {
+            today.writePlan(tasks: tasks.tasks)
+            _ = tasks.revision
+            _ = today.revision
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.writePlanAndObserve() }
+        }
+    }
+
+    /// After a sync wrote the cache: reload Today, fill the daily note, propose new homework and
+    /// assessments in the Inbox (PRD F3: never added silently).
+    /// Debug (`-debugAfterSync YES`): runs the after-sync work on the cache as it is, with no
+    /// network, then prints what it did.
+    func debugRunAfterSync() async {
+        startToday()
+        await didSync()
+    }
+
+    private func didSync() async {
+        today.reloadCache()
+        today.writeDailyNote(syncedAt: seqtaSync.lastSync ?? now())
+        await proposeFromSeqta()
+    }
+
+    private func proposeFromSeqta() async {
+        guard FileManager.default.fileExists(atPath: vault.root.path) else { return }
+        let inbox = self.inbox
+        inbox.reload()
+        tasks.start()
+        tasks.reload()
+        let proposals = SeqtaProposals.make(lessons: today.lessons, assessments: today.assessments,
+                                            inbox: inbox.items, tasks: tasks.tasks, now: now())
+        for item in proposals {
+            do { try await inbox.post(item) } catch {
+                Log.app.error("Couldn't post a SEQTA proposal: \(error.localizedDescription, privacy: .public)")
+                break
+            }
+        }
+        if !proposals.isEmpty { Log.app.info("Posted \(proposals.count) SEQTA proposals to the Inbox") }
     }
 
     private func beginPageSwitch() {
