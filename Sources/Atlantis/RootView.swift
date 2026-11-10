@@ -11,7 +11,9 @@ struct RootView: View {
         NavigationSplitView {
             List(selection: selection) {
                 ForEach(Page.main) { page in
-                    Label(page.title, systemImage: page.systemImage).tag(page)
+                    Label(page.title, systemImage: page.systemImage)
+                        .tag(page)
+                        .badge(page == .inbox ? model.inbox.pending.count : 0)
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -43,7 +45,7 @@ struct RootView: View {
         switch model.page {
         case .today: PlaceholderPage(page: .today, note: "Your classes, tasks and assessments will show here (M3).")
         case .tasks: TasksPage(store: model.tasks)
-        case .inbox: PlaceholderPage(page: .inbox, note: "Proposals from SEQTA and agents will show here (M4).")
+        case .inbox: InboxPage(store: model.inbox)
         case .messages: PlaceholderPage(page: .messages, note: "SEQTA messages will show here (M4b).")
         case .subjects: PlaceholderPage(page: .subjects, note: "Marks, feedback and files per subject will show here (M4b).")
         case .agents: PlaceholderPage(page: .agents, note: "Your bot team will show here (M5).")

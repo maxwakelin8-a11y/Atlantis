@@ -41,6 +41,17 @@ final class AppModel {
         return controller
     }
 
+    @ObservationIgnored private var inboxStorage: InboxStore?
+
+    /// Created the first time it's needed (the sidebar badge or the Inbox page), then kept.
+    var inbox: InboxStore {
+        if let inboxStorage { return inboxStorage }
+        let store = InboxStore(vault: VaultPaths(root: AppSettings.vaultURL))
+        store.start()
+        inboxStorage = store
+        return store
+    }
+
     /// Created the first time Tasks is shown (or anything else needs tasks); then it watches
     /// `machine/tasks.md` for edits made elsewhere.
     private(set) var tasksIfStarted: TaskStore?
