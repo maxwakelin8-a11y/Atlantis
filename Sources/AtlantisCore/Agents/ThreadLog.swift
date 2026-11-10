@@ -7,7 +7,8 @@ public struct ThreadMessage: Sendable, Equatable {
     public var role: Role
     public var at: Date
     public var text: String
-    /// Tools the bot called for this reply, in order (Atlantis names).
+    /// Tools the bot called for this reply, in order (Atlantis names). A call that was refused or
+    /// failed has a `!` in front (`!atlantis_school_assessments`); see `toolCalls`.
     public var tools: [String]
     /// How the run that wrote this reply went (bot messages only).
     public var run: RunInfo?
@@ -19,6 +20,14 @@ public struct ThreadMessage: Sendable, Equatable {
         self.tools = tools
         self.run = run
     }
+
+    /// The tool calls with whether each was refused or failed.
+    public var toolCalls: [(name: String, failed: Bool)] {
+        tools.map { $0.hasPrefix("!") ? (String($0.dropFirst()), true) : ($0, false) }
+    }
+
+    /// `tools` entry for a call.
+    public static func toolEntry(_ name: String, failed: Bool) -> String { failed ? "!" + name : name }
 }
 
 public struct RunInfo: Sendable, Equatable {
@@ -124,7 +133,8 @@ public enum ThreadLog {
                 header = "**\(avatar) \(botName)** · \(time.string(from: message.at))"
                 if !message.tools.isEmpty {
                     attributes.append(("tools", message.tools.joined(separator: ",")))
-                    meta.append("> " + message.tools.map(ToolLabels.label).joined(separator: " · "))
+                    meta.append("> " + message.toolCalls.map { $0.failed ? "~~\(ToolLabels.label($0.name))~~ (refused)" : ToolLabels.label($0.name) }
+                        .joined(separator: " · "))
                 }
                 if let run = message.run {
                     attributes += [("status", run.status.rawValue), ("steps", String(run.steps)),

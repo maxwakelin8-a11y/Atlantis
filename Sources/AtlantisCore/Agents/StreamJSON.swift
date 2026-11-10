@@ -292,11 +292,11 @@ public struct RunMonitor: Sendable {
             let detail = result.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return make(.failed, detail.isEmpty ? "The run failed (\(result.subtype))." : String(detail.prefix(400)))
         }
-        if text.isEmpty, let final = result.text, !final.isEmpty {
-            var withText = make(.ok, nil)
-            withText.text = final
-            return withText
-        }
-        return make(.ok, nil)
+        // Finished, but only after the app refused calls past the limit: say the answer may be partial.
+        var done = steps > maxSteps
+            ? make(.stepLimit, "\(bot) reached its limit of \(maxSteps) step\(maxSteps == 1 ? "" : "s"), so some lookups were refused and the answer may be incomplete.")
+            : make(.ok, nil)
+        if text.isEmpty, let final = result.text, !final.isEmpty { done.text = final }
+        return done
     }
 }

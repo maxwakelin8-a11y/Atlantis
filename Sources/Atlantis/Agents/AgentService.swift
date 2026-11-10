@@ -34,8 +34,9 @@ final class AgentService {
         var openText: Int?
         var nextTextID = 0
 
+        /// For the thread log: refused or failed calls get a `!` (see `ThreadMessage.tools`).
         var tools: [String] {
-            segments.compactMap { if case .tool(_, let name, _) = $0 { name } else { nil } }
+            segments.compactMap { if case .tool(_, let name, let failed) = $0 { ThreadMessage.toolEntry(name, failed: failed == true) } else { nil } }
         }
 
         var text: String {

@@ -291,6 +291,21 @@ private func botFile(_ front: String, body: String = "Be helpful.") -> String {
         #expect(summary.costUSD == TokenUsage(input: 5000, output: 200).conservativeCostUSD)
     }
 
+    @Test func softLimitIsReported() {
+        // maxSteps 1: the second call was refused by the app's gate, and the bot answered anyway.
+        var monitor = RunMonitor(bot: "School", allowedTools: ["atlantis_today"], maxSteps: 1)
+        for line in [StreamFixtures.initLine(tools: ["mcp__atlantis__atlantis_today"]),
+                     StreamFixtures.toolUse("t1", message: "m1"), StreamFixtures.toolResult("t1"),
+                     StreamFixtures.toolUse("t2", message: "m2"), StreamFixtures.toolResult("t2", isError: true),
+                     StreamFixtures.assistantText("Here's what I found.", message: "m3"), StreamFixtures.result()] {
+            _ = monitor.consume(line)
+        }
+        #expect(monitor.stop == nil)
+        let summary = monitor.summary(cancelled: false, exitCode: 0, errorTail: "", durationMs: 1)
+        #expect(summary.status == .stepLimit && summary.steps == 2 && summary.text == "Here's what I found.")
+        #expect(summary.message?.contains("limit of 1 step,") == true && summary.costUSD == 0.0123)
+    }
+
     @Test func resultSubtypesMapToStatuses() {
         func status(_ line: String, cancelled: Bool = false) -> RunSummary {
             var monitor = RunMonitor(bot: "School", allowedTools: ["atlantis_today"], maxSteps: 3)
@@ -338,6 +353,7 @@ private func botFile(_ front: String, body: String = "Be helpful.") -> String {
     @Test func dollarsReadWell() {
         #expect(UsageLedger.dollars(1) == "$1.00")
         #expect(UsageLedger.dollars(0.004) == "$0.004")
+        #expect(UsageLedger.dollars(0.0004) == "<$0.001")
         #expect(UsageLedger.dollars(0) == "$0.00")
     }
 }
@@ -512,7 +528,7 @@ private func botFile(_ front: String, body: String = "Be helpful.") -> String {
             ThreadMessage(role: .user, at: start, text: "What's due this week?\n\n## Not a heading of ours"),
             ThreadMessage(role: .bot, at: start.addingTimeInterval(60),
                           text: "> Quote first\n\nYou have **Maths**.\n<!-- atlantis:message role=\"user\" -->\nstill the bot",
-                          tools: ["atlantis_school_assessments", "atlantis_tasks_list"],
+                          tools: ["atlantis_school_assessments", "!atlantis_tasks_list"],
                           run: RunInfo(status: .ok, steps: 2, costUSD: 0.0061)),
             ThreadMessage(role: .user, at: start.addingTimeInterval(80), text: "Thanks"),
             ThreadMessage(role: .bot, at: start.addingTimeInterval(90), text: "",
@@ -526,10 +542,12 @@ private func botFile(_ front: String, body: String = "Be helpful.") -> String {
         #expect(text.hasPrefix("---\nid: a1b2c3d4\nbot: school\ntitle: \"What's due: this \\\"week\\\"?\"\n"))
         #expect(text.contains("runs: 2\nsteps: 2\ncost_usd: 0.0061\n"))
         #expect(text.contains("**🎓 School**"))
-        #expect(text.contains("> 📝 Read assessments · ✅ Read your tasks"))
+        #expect(text.contains("> 📝 Read assessments · ~~✅ Read your tasks~~ (refused)"))
+        #expect(text.contains("tools=\"atlantis_school_assessments,!atlantis_tasks_list\""))
         #expect(text.contains("**You**"))
         let back = try ThreadLog.parse(text)
         #expect(back == thread)
+        #expect(back.messages[1].toolCalls.map(\.failed) == [false, true])
         #expect(ThreadLog.render(back, botName: "School", avatar: "🎓") == text)
     }
 

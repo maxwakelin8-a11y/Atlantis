@@ -81,8 +81,9 @@ public final class UsageLedger: @unchecked Sendable {
         }
     }
 
-    /// `$0.42`, or `$0.004` below a cent so small runs don't read as free.
+    /// `$0.42`, `$0.004` below a cent, `<$0.001` below that, so small runs don't read as free.
     public static func dollars(_ value: Double) -> String {
+        if value > 0, value < 0.001 { return "<$0.001" }
         if value > 0, value < 0.01 { return String(format: "$%.3f", value) }
         return String(format: "$%.2f", value)
     }

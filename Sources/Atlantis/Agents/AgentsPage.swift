@@ -250,7 +250,7 @@ private struct MessageView: View {
         } else {
             VStack(alignment: .leading, spacing: Space.s) {
                 BotByline(bot: bot, date: message.at)
-                if !message.tools.isEmpty { ToolChips(tools: message.tools.map { ($0, false) }) }
+                if !message.tools.isEmpty { ToolChips(tools: message.toolCalls) }
                 if !message.text.isEmpty { ReplyText(text: message.text) }
                 if let run = message.run { RunFooter(run: run) }
             }
