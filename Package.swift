@@ -23,6 +23,8 @@ let package = Package(
         .executable(name: "Atlantis", targets: ["Atlantis"]),
         // The MCP stdio helper bundled in Atlantis.app (Contents/MacOS). Forwards to the app's socket.
         .executable(name: "atlantis-mcp", targets: ["AtlantisMCP"]),
+        // Runs the bots (PRD §7b): the app starts it on demand; it exits when idle.
+        .executable(name: "atlantis-agentd", targets: ["AtlantisAgentd"]),
     ],
     targets: [
         // Logic with no UI, so it can be tested on its own.
@@ -37,6 +39,11 @@ let package = Package(
             name: "AtlantisMCP",
             dependencies: ["AtlantisCore"],
             path: "Sources/AtlantisMCP"
+        ),
+        .executableTarget(
+            name: "AtlantisAgentd",
+            dependencies: ["AtlantisCore"],
+            path: "Sources/AtlantisAgentd"
         ),
         // Tests are an executable, not a .testTarget: with only the Command Line Tools,
         // `swift test` builds Swift Testing suites but never runs them. Run scripts/test.sh.

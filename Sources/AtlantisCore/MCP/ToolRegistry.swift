@@ -61,7 +61,7 @@ public final class ToolRegistry: ToolBackend, @unchecked Sendable {
     }
 
     private func isAllowed(_ definition: ToolDefinition) -> Bool {
-        !definition.destructive && allowList.isAllowed(tool: definition.name)
+        !definition.destructive && !MCPCaller.proposalsOnly && allowList.isAllowed(tool: definition.name)
     }
 
     private func propose(_ entry: Entry, arguments: JSONValue) async -> ToolResult {

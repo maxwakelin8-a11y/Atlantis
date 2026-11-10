@@ -60,7 +60,8 @@ public struct MCPProtocolHandler: Sendable {
         case "ping":
             return [:]
         case "tools/list":
-            let tools = try await backend.listTools()
+            let token = request.params?["_meta"]?[MCPCaller.agentTokenKey]?.stringValue
+            let tools = try await MCPCaller.$agentToken.withValue(token) { try await backend.listTools() }
             let encoded = try tools.map { try JSONValue.parse(JSONEncoder().encode($0)) }
             return ["tools": .array(encoded)]
         case "tools/call":
@@ -76,8 +77,12 @@ public struct MCPProtocolHandler: Sendable {
             }
             // The helper learned the client's name at `initialize`; the app hears it in `_meta`.
             let client = clientInfo.value ?? MCPCaller.sanitized(params["_meta"]?[MCPCaller.metaKey]?.stringValue)
+            // A bot's helper adds its grant token; the app's AgentToolGate checks it.
+            let token = params["_meta"]?[MCPCaller.agentTokenKey]?.stringValue
             let result = try await MCPCaller.$clientName.withValue(client) {
-                try await backend.callTool(name: name, arguments: arguments.isNull ? [:] : arguments)
+                try await MCPCaller.$agentToken.withValue(token) {
+                    try await backend.callTool(name: name, arguments: arguments.isNull ? [:] : arguments)
+                }
             }
             return try JSONValue.parse(JSONEncoder().encode(result))
         default:

@@ -11,5 +11,7 @@ if CommandLine.arguments.contains("--version") {
     exit(0)
 }
 
-let handler = MCPProtocolHandler(backend: SocketToolBackend(), serverName: "atlantis", serverVersion: MCPInfo.version)
+// A bot's run sets ATLANTIS_AGENT_TOKEN; the app then only offers that bot's tools.
+let token = ProcessInfo.processInfo.environment[MCPCaller.agentTokenEnv]
+let handler = MCPProtocolHandler(backend: SocketToolBackend(agentToken: token), serverName: "atlantis", serverVersion: MCPInfo.version)
 await StdioTransport.run(handler: handler)

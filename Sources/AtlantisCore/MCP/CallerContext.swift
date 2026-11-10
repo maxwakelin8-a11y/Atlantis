@@ -7,8 +7,18 @@ import Foundation
 /// same user, so a made-up name can't gain anything.
 public enum MCPCaller {
     @TaskLocal public static var clientName: String?
+    /// The agent grant token the stdio helper passed in `_meta` (set only while a call is handled).
+    @TaskLocal public static var agentToken: String?
+    /// The bot making this call, once its token checked out (`AgentToolGate`).
+    @TaskLocal public static var agentName: String?
+    /// Gated writes must become Inbox proposals whatever the allow list says (bots that only suggest).
+    @TaskLocal public static var proposalsOnly = false
 
     public static let metaKey = "atlantis/client"
+    /// `_meta` key for the agent grant token (`ATLANTIS_AGENT_TOKEN` in the helper's environment).
+    public static let agentTokenKey = "atlantis/agent-token"
+    /// Environment variable the agent daemon sets for `atlantis-mcp`.
+    public static let agentTokenEnv = "ATLANTIS_AGENT_TOKEN"
 
     /// A short label made of letters, digits and `. _ -` (nil if nothing usable is left).
     public static func sanitized(_ raw: String?) -> String? {
@@ -23,9 +33,10 @@ public enum MCPCaller {
         return clipped.isEmpty ? nil : clipped
     }
 
-    /// `mcp:<client>`, or plain `mcp` when the client didn't say who it is.
+    /// `agent:<bot>` for a bot, else `mcp:<client>`, or plain `mcp` when the client didn't say who it is.
     public static var source: String {
-        clientName.map { "mcp:\($0)" } ?? "mcp"
+        if let agentName { return "agent:\(agentName)" }
+        return clientName.map { "mcp:\($0)" } ?? "mcp"
     }
 }
 

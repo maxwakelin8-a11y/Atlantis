@@ -14,44 +14,12 @@ public enum PeerCredentials {
 }
 
 /// The app's end of the MCP bridge: a Unix domain socket the `atlantis-mcp` helper connects to.
-///
-/// Security (AGENTS.md, PRD §17): never TCP; the socket file is `0600` inside a `0700` directory;
-/// every accepted connection is checked with `getpeereid` and dropped unless it is the same user.
-/// Idle costs nothing: accepting uses a `DispatchSource` and each connection blocks on its own
-/// socket with a timeout, so there is no polling.
+/// One request, one reply, then hang up. The listening and peer checks live in `UnixSocketServer`.
 public final class MCPSocketServer: @unchecked Sendable {
-    public enum StartError: Error, Equatable, CustomStringConvertible {
-        case pathTooLong(Int)
-        case alreadyRunning
-        case notASocket(String)
-        case directoryNotOwned(String)
-        case posix(String, Int32)
-
-        public var description: String {
-            switch self {
-            case .pathTooLong(let n): "Socket path is too long (\(n) bytes, max 103)."
-            case .alreadyRunning: "Another Atlantis is already serving MCP."
-            case .notASocket(let p): "\(p) exists and isn't a socket, so it was left alone."
-            case .directoryNotOwned(let p): "\(p) isn't owned by you."
-            case .posix(let what, let code): "\(what) failed: \(String(cString: strerror(code)))."
-            }
-        }
-    }
+    public typealias StartError = UnixSocketStartError
 
     public let socketURL: URL
-    private let handler: MCPProtocolHandler
-    private let peerCheck: @Sendable (Int32) -> Bool
-    private let maxConnections: Int
-    private let requestTimeout: Double
-
-    private let acceptQueue = DispatchQueue(label: "au.lifeos.atlantis.mcp.accept", qos: .utility)
-    private let workQueue = DispatchQueue(label: "au.lifeos.atlantis.mcp.work", qos: .utility, attributes: .concurrent)
-    private let lock = NSLock()
-    private var listenFD: Int32 = -1
-    private var source: DispatchSourceRead?
-    private var active = Set<Int32>()
-    private var running = false
-    private let stopped = DispatchSemaphore(value: 0)
+    private let server: UnixSocketServer
 
     /// - Parameters:
     ///   - peerCheck: defaults to the same-user check; tests inject a refusing one.
@@ -62,13 +30,79 @@ public final class MCPSocketServer: @unchecked Sendable {
                 requestTimeout: Double = 10,
                 peerCheck: @escaping @Sendable (Int32) -> Bool = PeerCredentials.isSameUser) {
         self.socketURL = socketURL
-        self.handler = handler
-        self.maxConnections = maxConnections
-        self.requestTimeout = requestTimeout
+        server = UnixSocketServer(socketURL: socketURL, label: "mcp", maxConnections: maxConnections,
+                                  peerCheck: peerCheck) { fd in
+            Framing.setTimeouts(fd, seconds: requestTimeout)
+            guard let request = try? Framing.readFrame(from: fd) else { return }
+            // Replies can take as long as a tool needs; only sending the answer is time-limited.
+            Framing.setTimeouts(fd, seconds: requestTimeout)
+            let reply = Blocking.run { await handler.handle(request) }
+            if let reply { try? Framing.writeFrame(reply, to: fd) }
+        }
+    }
+
+    public var isRunning: Bool { server.isRunning }
+    public func start() throws { try server.start() }
+    /// Stops accepting, drops open connections and removes the socket file. Safe to call twice.
+    public func stop() { server.stop() }
+}
+
+public enum UnixSocketStartError: Error, Equatable, CustomStringConvertible {
+    case pathTooLong(Int)
+    case alreadyRunning
+    case notASocket(String)
+    case directoryNotOwned(String)
+    case posix(String, Int32)
+
+    public var description: String {
+        switch self {
+        case .pathTooLong(let n): "Socket path is too long (\(n) bytes, max 103)."
+        case .alreadyRunning: "Another Atlantis is already listening on this socket."
+        case .notASocket(let p): "\(p) exists and isn't a socket, so it was left alone."
+        case .directoryNotOwned(let p): "\(p) isn't owned by you."
+        case .posix(let what, let code): "\(what) failed: \(String(cString: strerror(code)))."
+        }
+    }
+}
+
+/// A Unix domain socket server for the app and its helpers (MCP, `atlantis-agentd`).
+///
+/// Security (AGENTS.md, PRD §17): never TCP; the socket file is `0600` inside a `0700` directory;
+/// every accepted connection is checked with `getpeereid` and dropped unless it is the same user.
+/// Idle costs nothing: accepting uses a `DispatchSource` and each connection is served on its own
+/// worker (blocking on its socket), so there is no polling.
+public final class UnixSocketServer: @unchecked Sendable {
+    public let socketURL: URL
+    private let serve: @Sendable (Int32) -> Void
+    private let peerCheck: @Sendable (Int32) -> Bool
+    private let maxConnections: Int
+
+    private let acceptQueue: DispatchQueue
+    private let workQueue: DispatchQueue
+    private let lock = NSLock()
+    private var listenFD: Int32 = -1
+    private var source: DispatchSourceRead?
+    private var active = Set<Int32>()
+    private var running = false
+    private let stopped = DispatchSemaphore(value: 0)
+
+    /// - Parameter serve: handles one accepted, same-user connection. Runs on a worker thread and may
+    ///   block; the server closes the socket when it returns.
+    public init(socketURL: URL, label: String, maxConnections: Int = 32,
+                peerCheck: @escaping @Sendable (Int32) -> Bool = PeerCredentials.isSameUser,
+                serve: @escaping @Sendable (Int32) -> Void) {
+        self.socketURL = socketURL
+        self.serve = serve
         self.peerCheck = peerCheck
+        self.maxConnections = maxConnections
+        acceptQueue = DispatchQueue(label: "au.lifeos.atlantis.\(label).accept", qos: .utility)
+        workQueue = DispatchQueue(label: "au.lifeos.atlantis.\(label).work", qos: .utility, attributes: .concurrent)
     }
 
     public var isRunning: Bool { lock.withLock { running } }
+
+    /// Connections being served right now.
+    public var activeConnections: Int { lock.withLock { active.count } }
 
     // MARK: Start / stop
 
@@ -81,9 +115,9 @@ public final class MCPSocketServer: @unchecked Sendable {
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         var dirStat = stat()
-        guard lstat(dir, &dirStat) == 0 else { throw StartError.posix("stat directory", errno) }
-        guard dirStat.st_uid == geteuid(), (dirStat.st_mode & S_IFMT) == S_IFDIR else { throw StartError.directoryNotOwned(dir) }
-        if dirStat.st_mode & 0o777 != 0o700, chmod(dir, 0o700) != 0 { throw StartError.posix("chmod directory", errno) }
+        guard lstat(dir, &dirStat) == 0 else { throw UnixSocketStartError.posix("stat directory", errno) }
+        guard dirStat.st_uid == geteuid(), (dirStat.st_mode & S_IFMT) == S_IFDIR else { throw UnixSocketStartError.directoryNotOwned(dir) }
+        if dirStat.st_mode & 0o777 != 0o700, chmod(dir, 0o700) != 0 { throw UnixSocketStartError.posix("chmod directory", errno) }
 
         try removeStaleSocket(at: path)
 
@@ -91,22 +125,22 @@ public final class MCPSocketServer: @unchecked Sendable {
         addr.sun_family = sa_family_t(AF_UNIX)
         let capacity = MemoryLayout.size(ofValue: addr.sun_path)
         let bytes = Array(path.utf8)
-        guard bytes.count < capacity else { throw StartError.pathTooLong(bytes.count) }
+        guard bytes.count < capacity else { throw UnixSocketStartError.pathTooLong(bytes.count) }
         withUnsafeMutableBytes(of: &addr.sun_path) { raw in
             raw.copyBytes(from: bytes)
             raw[bytes.count] = 0
         }
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { throw StartError.posix("socket", errno) }
+        guard fd >= 0 else { throw UnixSocketStartError.posix("socket", errno) }
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
         let bindResult = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
-        guard bindResult == 0 else { let e = errno; close(fd); throw StartError.posix("bind", e) }
+        guard bindResult == 0 else { let e = errno; close(fd); throw UnixSocketStartError.posix("bind", e) }
         // Straight after bind; the 0700 directory means nobody else could reach it in between.
-        guard chmod(path, 0o600) == 0 else { let e = errno; close(fd); unlink(path); throw StartError.posix("chmod socket", e) }
-        guard listen(fd, 64) == 0 else { let e = errno; close(fd); unlink(path); throw StartError.posix("listen", e) }
+        guard chmod(path, 0o600) == 0 else { let e = errno; close(fd); unlink(path); throw UnixSocketStartError.posix("chmod socket", e) }
+        guard listen(fd, 64) == 0 else { let e = errno; close(fd); unlink(path); throw UnixSocketStartError.posix("listen", e) }
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: acceptQueue)
@@ -142,12 +176,12 @@ public final class MCPSocketServer: @unchecked Sendable {
     private func removeStaleSocket(at path: String) throws {
         var st = stat()
         guard lstat(path, &st) == 0 else { return }
-        guard (st.st_mode & S_IFMT) == S_IFSOCK else { throw StartError.notASocket(path) }
+        guard (st.st_mode & S_IFMT) == S_IFSOCK else { throw UnixSocketStartError.notASocket(path) }
         // A live server answers a connect; a dead one leaves a refused socket file behind.
         let probe = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard probe >= 0 else { throw StartError.posix("socket", errno) }
+        guard probe >= 0 else { throw UnixSocketStartError.posix("socket", errno) }
         defer { close(probe) }
-        if (try? MCPSocketClient.connect(probe, to: path)) != nil { throw StartError.alreadyRunning }
+        if (try? MCPSocketClient.connect(probe, to: path)) != nil { throw UnixSocketStartError.alreadyRunning }
         unlink(path)
     }
 
@@ -184,16 +218,6 @@ public final class MCPSocketServer: @unchecked Sendable {
             lock.withLock { _ = active.remove(fd) }
             close(fd)
         }
-    }
-
-    /// One request, one reply, then hang up.
-    private func serve(_ fd: Int32) {
-        Framing.setTimeouts(fd, seconds: requestTimeout)
-        guard let request = try? Framing.readFrame(from: fd) else { return }
-        // Replies can take as long as a tool needs; only sending the answer is time-limited.
-        Framing.setTimeouts(fd, seconds: requestTimeout)
-        let reply = Blocking.run { await self.handler.handle(request) }
-        if let reply { try? Framing.writeFrame(reply, to: fd) }
     }
 }
 

@@ -93,16 +93,30 @@ public struct SocketToolBackend: ToolBackend {
 
     let client: MCPSocketClient
     let callTimeout: Double
+    /// Set when a bot runs this helper (`ATLANTIS_AGENT_TOKEN`): sent with every request so the app
+    /// limits the tools to that bot's list. Never taken from the MCP client's own messages.
+    let agentToken: String?
 
-    public init(client: MCPSocketClient = MCPSocketClient(path: MCPSocketClient.defaultPath), callTimeout: Double = 120) {
+    public init(client: MCPSocketClient = MCPSocketClient(path: MCPSocketClient.defaultPath), callTimeout: Double = 120,
+                agentToken: String? = nil) {
         self.client = client
         self.callTimeout = callTimeout
+        self.agentToken = agentToken.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// `_meta` for a request: the client's name and, for a bot, its grant token.
+    private func meta(client: String?) -> JSONValue? {
+        var meta: [String: JSONValue] = [:]
+        if let client { meta[MCPCaller.metaKey] = .string(client) }
+        if let agentToken { meta[MCPCaller.agentTokenKey] = .string(agentToken) }
+        return meta.isEmpty ? nil : .object(meta)
     }
 
     /// With the app closed the list holds just `atlantis_ping`, so the server still looks alive and the reason is clear.
     public func listTools() async throws -> [ToolDefinition] {
         do {
-            let result = try await request(method: "tools/list", params: [:], timeout: 10)
+            let params: JSONValue = meta(client: nil).map { ["_meta": $0] } ?? [:]
+            let result = try await request(method: "tools/list", params: params, timeout: 10)
             let tools = result["tools"]?.arrayValue ?? []
             return try tools.map { try JSONDecoder().decode(ToolDefinition.self, from: $0.encoded()) }
         } catch MCPSocketError.appNotRunning {
@@ -117,7 +131,7 @@ public struct SocketToolBackend: ToolBackend {
     public func callTool(name: String, arguments: JSONValue) async throws -> ToolResult {
         do {
             var params: JSONValue = ["name": .string(name), "arguments": arguments]
-            if let client = MCPCaller.clientName { params = ["name": .string(name), "arguments": arguments, "_meta": [MCPCaller.metaKey: .string(client)]] }
+            if let meta = meta(client: MCPCaller.clientName) { params = ["name": .string(name), "arguments": arguments, "_meta": meta] }
             let result = try await request(method: "tools/call", params: params, timeout: callTimeout)
             return try JSONDecoder().decode(ToolResult.self, from: result.encoded())
         } catch MCPSocketError.appNotRunning {

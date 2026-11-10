@@ -57,6 +57,15 @@ public enum JSONValue: Sendable, Equatable, Codable {
         }
     }
 
+    /// Any number as a double.
+    public var doubleValue: Double? {
+        switch self {
+        case .int(let i): Double(i)
+        case .double(let d): d
+        default: nil
+        }
+    }
+
     // MARK: Data
 
     public static func parse(_ data: Data) throws -> JSONValue {
