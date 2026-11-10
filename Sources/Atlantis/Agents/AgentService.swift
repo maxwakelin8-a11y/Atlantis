@@ -430,10 +430,35 @@ final class AgentService {
         }.joined(separator: "\n---\n")
     }
 
-    /// Waits for every run to finish (debug only).
+    /// Waits for every run to finish (debug only). With `debugAutoApprove`, approves what's asked.
     func debugWaitForRuns() async {
         try? await Task.sleep(for: .milliseconds(300))
-        while !runs.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
+        while !runs.isEmpty {
+            try? await Task.sleep(for: .milliseconds(200))
+            if debugAutoApprove, let first = approvals.first {
+                try? await Task.sleep(for: .seconds(2))
+                print("Approving: \(first.title)")
+                approve(first)
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    @ObservationIgnored var debugAutoApprove = false
+
+    /// A made-up approval card in the open thread, for screenshots (`-debugApprovalCard`).
+    func debugShowApprovalCard() {
+        start()
+        guard let thread, let bot = selectedBot else { return }
+        let runID = "debug-run"
+        var run = LiveRun(runID: runID, botID: bot.id, threadID: thread.id)
+        run.segments = [.text(id: 0, "I'll add a study block for the Forces report so it's on your list."),
+                        .tool(id: "debug-tool", name: "atlantis_task_add", failed: nil)]
+        run.steps = 2
+        runs[runID] = run
+        approvals = [PendingApproval(id: "i-debug001", runID: runID, bot: bot.id, tool: "atlantis_task_add",
+                                     title: "Add task: Start the forces report method",
+                                     detail: "Due Thursday · 45 min · Science. Draft the method section before period 3 so you can ask Mr Newton questions.")]
     }
 
     // MARK: Approvals (`ask` bots)

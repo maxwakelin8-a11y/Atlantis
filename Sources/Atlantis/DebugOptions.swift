@@ -55,8 +55,20 @@ struct DebugOptions {
     /// `-debugAgentAsk "What's due?"`: send this to a bot in a new thread, print the outcome and quit.
     /// Use it with `-vaultPath` on a made-up vault. Real runs cost real usage.
     var agentAsk: String?
-    /// `-debugAgentBot school`: which bot `-debugAgentAsk` talks to.
+    /// `-debugAgentBot school`: which bot `-debugAgentAsk` / `-debugAgentTask` / `-debugAgentMention` uses.
     var agentBot = "school"
+    /// `-debugAgentTask "Turing"`: assign the first open task with this in its title to the bot, wait
+    /// for the run, print what landed in the Inbox and quit. Real runs cost real usage.
+    var agentTask: String?
+    /// `-debugAgentMention /abs/Writer/Project/Doc.md -debugAgentRequest "…"`: send an @mention
+    /// through the Docs page's bridge (`agents.ask`), wait, print the Inbox items and quit.
+    var agentMention: String?
+    var agentRequest = "Give me one tip to improve this."
+    /// `-debugAutoApprove YES`: approve each `ask` approval a couple of seconds after it appears
+    /// (as clicking Approve would). For the live check of `ask` bots.
+    var autoApprove = false
+    /// `-debugApprovalCard YES`: show a made-up approval card in the open thread (screenshots).
+    var approvalCard = false
 
     static func fromArguments(_ defaults: UserDefaults = .standard) -> DebugOptions {
         let args = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
@@ -98,6 +110,11 @@ struct DebugOptions {
         }
         options.agentAsk = args["debugAgentAsk"] as? String
         if let bot = args["debugAgentBot"] as? String { options.agentBot = bot }
+        options.agentTask = args["debugAgentTask"] as? String
+        options.agentMention = args["debugAgentMention"] as? String
+        if let request = args["debugAgentRequest"] as? String { options.agentRequest = request }
+        options.autoApprove = (args["debugAutoApprove"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
+        options.approvalCard = (args["debugApprovalCard"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.showHUD = (args["debugHUD"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.pageSequence = ((args["debugPageSequence"] as? String) ?? "")
             .split(separator: ",")

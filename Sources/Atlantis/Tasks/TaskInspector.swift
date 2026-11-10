@@ -227,7 +227,7 @@ struct TaskInspector: View {
                     guard let assigned else { return }
                     botProblem = agents.runTask(task, botID: assigned)
                 }
-                .labelStyle(.iconOnly)
+                .labelStyle(.titleAndIcon)
                 .help(assignedBot.map { "Ask \($0.name) to work on this task again" } ?? "Assign a bot first")
                 .disabled(assignedBot == nil || running || task.blockID == nil)
             }
@@ -239,6 +239,10 @@ struct TaskInspector: View {
                 botStatus(status)
             } else if bots.isEmpty {
                 Text("No bot takes tasks yet. Add task to a bot's triggers on the Agents page.")
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.textSecondary)
+            } else if let assignedBot {
+                Text("\(assignedBot.name) hasn't worked on this yet. \(autonomyNote(assignedBot))")
                     .font(Typo.caption)
                     .foregroundStyle(Palette.textSecondary)
             } else if assigned == nil {
@@ -277,6 +281,14 @@ struct TaskInspector: View {
                 Text(message).foregroundStyle(Palette.textSecondary).lineLimit(3)
             }
             .font(Typo.caption)
+        }
+    }
+
+    private func autonomyNote(_ bot: BotDefinition) -> String {
+        switch bot.autonomy {
+        case .suggest: "Its changes wait in the Inbox."
+        case .ask: "It asks before changing anything."
+        case .act: "It may apply allowed changes itself."
         }
     }
 

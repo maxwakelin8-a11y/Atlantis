@@ -62,6 +62,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 NSApp.terminate(nil)
             }
         }
+        if debug.autoApprove { model.agents.debugAutoApprove = true }
+        if let title = debug.agentTask {
+            Task { [model, debug] in
+                print(await model.agents.debugTask(title, bot: debug.agentBot))
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if let path = debug.agentMention {
+            Task { [model, debug] in
+                // Through the real bridge: the page posts `agents.ask` like the Ask chip does.
+                model.page = .docs
+                await model.docs.start()
+                await model.docs.waitUntilReady()
+                let reply = await model.docs.debugBridge(["op": "agents.ask", "bot": debug.agentBot, "path": path,
+                                                          "request": debug.agentRequest])
+                print("agents.ask: \(reply)")
+                await model.agents.debugWaitForRuns()
+                print(model.agents.debugReport(origin: AgentOrigin.doc(
+                    (try? AgentMention.relativeDocPath(path, writer: WriterFiles(root: AppSettings.writerURL))) ?? path)))
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if debug.approvalCard {
+            Task { [model] in
+                try? await Task.sleep(for: .milliseconds(600))
+                model.agents.debugShowApprovalCard()
+            }
+        }
         if debug.networkCheck { Task { await NetworkCheck.run() } }
         if debug.seqtaSync {
             Task { [model] in

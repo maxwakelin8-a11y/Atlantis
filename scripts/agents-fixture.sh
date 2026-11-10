@@ -2,11 +2,17 @@
 # Makes a made-up vault and SEQTA cache (via today-fixture.sh) plus bot files and one made-up
 # School thread, for trying the Agents page without the real vault. Everything here is invented.
 #
-#   scripts/agents-fixture.sh [vault-dir] [cache-dir]     (defaults: /tmp/agents-vault /tmp/agents-seqta)
-#   .build/debug/Atlantis -vaultPath /tmp/agents-vault -debugSeqtaCache /tmp/agents-seqta -debugPage agents
+#   scripts/agents-fixture.sh [vault-dir] [cache-dir] [writer-dir]
+#       (defaults: /tmp/agents-vault /tmp/agents-seqta /tmp/agents-writer)
+#   .build/debug/Atlantis -vaultPath /tmp/agents-vault -debugSeqtaCache /tmp/agents-seqta \
+#       -writerPath /tmp/agents-writer -debugPage agents
 #
-# The School bot here uses the cheapest model (haiku) and a small daily cap, so a live check
-# (`-debugAgentAsk "What's due this week?"`) costs little. Pass --no-thread to skip the made-up thread.
+# The bots here use the cheapest model (haiku) and small daily caps, so live checks cost little:
+#   -debugAgentAsk "What's due this week?"                                       (chat with School)
+#   -debugAgentTask "forces report" -debugAgentBot coach -debugAutoApprove YES   (Coach asks first)
+#   -debugAgentMention /tmp/agents-writer/Essay/Draft/Intro.md -debugAgentBot builder \
+#       -debugAgentRequest "Tighten the first paragraph."
+# Pass --no-thread to skip the made-up thread.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,6 +20,7 @@ thread=1
 if [[ "${1:-}" == "--no-thread" ]]; then thread=0; shift; fi
 vault="${1:-/tmp/agents-vault}"
 cache="${2:-/tmp/agents-seqta}"
+writer="${3:-/tmp/agents-writer}"
 
 scripts/today-fixture.sh "$vault" "$cache" > /dev/null
 agents="$vault/machine/atlantis/agents"
@@ -25,7 +32,7 @@ name: School
 avatar: 🎓
 model: haiku
 autonomy: suggest
-triggers: [chat]
+triggers: [chat, task, mention]
 tools:
   - atlantis_today
   - atlantis_tasks_list
@@ -59,15 +66,52 @@ EOF
 cat > "$agents/coach.md" <<'EOF'
 ---
 name: Coach
-avatar: 🥋
+avatar: 🧭
 model: haiku
-tools: [atlantis_today, atlantis_tasks_list, atlantis_inbox_post]
+autonomy: ask
+triggers: [chat, task]
+tools: [atlantis_today, atlantis_tasks_list, atlantis_task_add, atlantis_task_update, atlantis_inbox_post]
 budget:
   max_steps: 6
   daily_cost_usd: 0.25
 ---
 
-You are Coach. Help plan training and rest around the school week. Keep it short.
+You are Coach. Help plan study and rest around the school week. When a task needs a first step,
+add one small task for it (atlantis_task_add). Keep it short.
+EOF
+
+cat > "$agents/builder.md" <<'EOF'
+---
+name: Builder
+avatar: 🛠️
+model: haiku
+autonomy: suggest
+triggers: [chat, mention]
+tools: [atlantis_docs_list, atlantis_docs_search, atlantis_doc_read, atlantis_doc_write, atlantis_inbox_post]
+budget:
+  max_steps: 6
+  daily_cost_usd: 0.25
+---
+
+You are Builder, a writing helper. Give short, specific feedback and keep the writer's voice.
+When an edit is clearly wanted, propose the full new text with atlantis_doc_write.
+EOF
+
+# A task assigned to Coach (the `agent::` field).
+print -r -- "- [ ] Start the forces report [due:: $(date -v+3d +%Y-%m-%d)] [project:: Science] [agent:: coach] ^t-f0ace001" >> "$vault/machine/tasks.md"
+
+# A Writer folder with one essay and an @mention in it.
+mkdir -p "$writer/Essay/Draft"
+print -r -- '{"title":"Bridge design essay"}' > "$writer/Essay/.writer.json"
+cat > "$writer/Essay/Draft/Intro.md" <<'EOF'
+---
+title: Intro
+---
+
+Bridges are everywhere, and most of the time we don't even think about them. In this essay I will
+explain how a truss bridge carries a load and why engineers still use them today.
+
+@builder tighten this intro and make the thesis clearer
 EOF
 
 if (( thread )); then
@@ -145,4 +189,4 @@ Your Visual Art self portrait has marks released. The other subjects have nothin
 EOF
 fi
 
-echo "Made $vault (bots: school, coach) and $cache"
+echo "Made $vault (bots: school, coach, builder), $cache and $writer"

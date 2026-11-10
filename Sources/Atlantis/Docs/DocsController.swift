@@ -188,6 +188,19 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
         try await Task.detached(priority: .userInitiated) { try work() }.value
     }
 
+    /// Posts one message to the bridge from the page, as the page's own code would (debug).
+    func debugBridge(_ message: [String: String]) async -> String {
+        guard let webView else { return "no web view" }
+        do {
+            let result = try await webView.callAsyncJavaScript(
+                "return JSON.stringify(await window.webkit.messageHandlers.writer.postMessage(message))",
+                arguments: ["message": message], contentWorld: .page)
+            return result as? String ?? "nil"
+        } catch {
+            return "error: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: Round-trip check (debug)
 
     /// Waits until the page has set up `window.atlantis`.
