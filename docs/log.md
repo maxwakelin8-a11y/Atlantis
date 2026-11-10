@@ -128,3 +128,11 @@
 - Needs a live check by the user: SEQTA sync, message bodies, file downloads, sending, dark mode
   of Subjects/Messages headers.
 - Next: Phase 2 (M5 agent runtime + School bot).
+
+## 2026-11-10: Phase 2 built, build phase done
+- Landed: M5 agent runtime + School bot (#14), M6 assign/@mention/autonomy + Coach/Builder (#15),
+  M7 triggers, Chief/Scout, Today Team card, End of Day (#16). `p1/integration`: 389 Swift +
+  76 web tests pass. Live bot runs (haiku, made-up vault) all worked; total cost under $0.01.
+- Problems: helpers stopped on API limits and when the Mac slept; resumed from WIP commits.
+  All known gaps are now in docs/issues.md.
+- Next: the user tries the real app (build from `p1/integration`); fix issues slowly.

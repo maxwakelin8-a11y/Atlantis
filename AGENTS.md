@@ -22,7 +22,11 @@ cloud backend and no other users.
   pasted images (M1 done).
 - Phase 1 built (2026-11-10): + #11 Today/SEQTA→Inbox/daily note, #12 Subjects + Messages,
   #13 MCP tools + allow list. `p1/integration` merges everything (282 Swift tests).
-- In progress: Phase 2, M5 agent runtime (`atlantis-agentd`, School bot), then M6, M7.
+- Phase 2 built (2026-11-10): + #14 M5 agent runtime (`atlantis-agentd`, School), #15 M6 bots as
+  teammates (assign, @mention, autonomy), #16 M7 triggers, Chief/Scout, Today Team card, End of Day.
+  `p1/integration` merges everything (389 Swift + 76 web tests).
+- **Now: fixing phase.** Work through `docs/issues.md` slowly, starting with what the user finds
+  in the real app. Phase 3 (M8 Docs+, M9 rituals + design pass) waits until then.
 - Not live-tested yet: SEQTA sync against real SEQTA (needs the user signed in).
 - Left from M0: the Gallery screen waits for the user's design.
 
@@ -104,8 +108,8 @@ is approved, restyle screens to match it and compare screenshots against it.
 
 ## How we work (changed 2026-11-09)
 
-- **Build first, fix later.** Build Phase 1 and Phase 2 (M1 rest → M7) straight through without
-  stopping for approval between steps; then switch to fixing issues slowly.
+- **Build first, fix later.** Phase 1 and Phase 2 (M1 rest → M7) were built straight through
+  (done 2026-11-10); now fix issues slowly, one small PR at a time.
 - **One main thread** plans, reviews and merges. Helper agents may build milestones or parts of them in their own worktrees (user OK 2026-11-09): Sonnet 5.5, Haiku 5.5, or Opus 5.5 at medium/high. Never `max` effort on any model; `xhigh` only for Haiku or the single biggest Opus task.
 - **Branch + PR per milestone:** each milestone gets its own branch (stacked on the previous one
   if it isn't merged yet) and a GitHub PR with a short "try this" list (2–5 things). The user
