@@ -65,7 +65,7 @@ private struct BotList: View {
                 }
             }
         }
-        .listStyle(.sidebar)
+        .listStyle(.inset)
         .overlay {
             if service.bots.isEmpty {
                 EmptyState(title: "No bots", systemImage: "person.2",
@@ -321,18 +321,34 @@ private struct ToolChips: View {
     }
 }
 
+/// A reply's Markdown: inline styles (bold, italic, code, links), with list markers shown as bullets
+/// and headings as bold lines. Plain `Text`, so long replies stay cheap.
 private struct ReplyText: View {
     let text: String
 
     var body: some View {
         Text(Self.markdown(text))
             .textSelection(.enabled)
+            .lineSpacing(Space.xxs)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     static func markdown(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+        let lines = text.components(separatedBy: "\n").map { line -> String in
+            let trimmed = line.drop(while: { $0 == " " })
+            let indent = String(repeating: "  ", count: (line.count - trimmed.count) / 2)
+            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("+ ") {
+                return indent + "•  " + trimmed.dropFirst(2)
+            }
+            if let hashes = trimmed.firstIndex(where: { $0 != "#" }), (1...6).contains(trimmed[..<hashes].count),
+               trimmed[hashes] == " " {
+                return "**" + trimmed[trimmed.index(after: hashes)...].trimmingCharacters(in: .whitespaces) + "**"
+            }
+            return line
+        }
+        let prepared = lines.joined(separator: "\n")
+        return (try? AttributedString(markdown: prepared, options: options)) ?? AttributedString(text)
     }
 }
 

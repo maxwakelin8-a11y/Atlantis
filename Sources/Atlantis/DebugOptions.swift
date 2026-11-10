@@ -156,7 +156,25 @@ enum Snapshot {
         view.layoutSubtreeIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.fileWriteUnknown) }
         view.cacheDisplay(in: view.bounds, to: rep)
-        try rep.representation(using: .png, properties: [:])?.write(to: url, options: .atomic)
+        // The window draws its own background, so the content view's capture is see-through:
+        // put it on the window background colour (in the window's light or dark appearance).
+        guard let content = rep.cgImage,
+              let context = CGContext(data: nil, width: content.width, height: content.height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            try rep.representation(using: .png, properties: [:])?.write(to: url, options: .atomic)
+            return
+        }
+        var background = NSColor.windowBackgroundColor.cgColor
+        (view.window?.effectiveAppearance ?? view.effectiveAppearance).performAsCurrentDrawingAppearance {
+            background = NSColor.windowBackgroundColor.cgColor
+        }
+        let rect = CGRect(x: 0, y: 0, width: content.width, height: content.height)
+        context.setFillColor(background)
+        context.fill(rect)
+        context.draw(content, in: rect)
+        guard let combined = context.makeImage() else { return }
+        try NSBitmapImageRep(cgImage: combined).representation(using: .png, properties: [:])?.write(to: url, options: .atomic)
     }
 
     private static func allWebViews(in view: NSView) -> [WKWebView] {
