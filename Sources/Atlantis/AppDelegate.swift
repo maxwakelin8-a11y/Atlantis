@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if debug.approvalCard {
             Task { [model] in
                 try? await Task.sleep(for: .milliseconds(600))
-                model.agents.debugShowApprovalCard()
+                await model.agents.debugShowApprovalCard()
             }
         }
         if debug.networkCheck { Task { await NetworkCheck.run() } }

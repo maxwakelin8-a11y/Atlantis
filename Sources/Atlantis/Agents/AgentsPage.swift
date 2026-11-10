@@ -207,7 +207,10 @@ private struct Messages: View {
             .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
             .onChange(of: service.thread?.messages.count) { withAnimation(Motion.quick) { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
             .onChange(of: service.live?.segments) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-            .onChange(of: service.approvals) { withAnimation(Motion.quick) { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
+            .onChange(of: service.approvals) {
+                // After the card has laid out, so all of it comes into view.
+                DispatchQueue.main.async { withAnimation(Motion.quick) { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
+            }
         }
     }
 }

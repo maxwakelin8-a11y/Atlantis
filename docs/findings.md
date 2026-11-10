@@ -61,3 +61,9 @@ Reusable lessons (dated bullets).
 - `-debugSnapshot` falls back to `cacheDisplay` when the display is asleep (screencapture gives
   black). That draws no window background (dark mode looked white) and no sidebar materials; the
   fallback now fills the window background first. The main sidebar still comes out blank.
+- Inbox items carry proposal-only fields (`origin`, `thread`, `run`); `InboxTaskActions` copies
+  every non-reserved field onto the task, so new link fields must go in its reserved list.
+- Writer page tests in jsdom: the page focuses the doc's start in a `setTimeout` after opening a
+  project; wait a tick before moving the selection, or it jumps back to position 1.
+- Bash heredocs: a Python script in `<<'EOF'` that itself contains `<<'EOF'` lines (shell
+  fixtures) ends early. Write such scripts to a file first.

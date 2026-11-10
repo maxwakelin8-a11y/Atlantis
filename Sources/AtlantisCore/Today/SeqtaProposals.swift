@@ -74,8 +74,8 @@ public enum SeqtaProposals {
 
 /// What accepting an Inbox proposal does to the task list (PRD F4).
 public enum InboxTaskActions {
-    /// Fields that describe the proposal itself, not the task.
-    static let reserved: Set<String> = ["task", "id", "title", "notes"]
+    /// Fields that describe the proposal itself, not the task (`origin` links a bot run's items, M6).
+    static let reserved: Set<String> = ["task", "id", "title", "notes", AgentOrigin.fieldKey]
 
     /// A `task.add` proposal as a new task: its title, every field (`due`, `project`, `area`, …)
     /// and `source::`.
@@ -103,7 +103,7 @@ public enum InboxTaskActions {
     public static func apply(_ item: InboxItem, to task: inout TaskItem, today: DayStamp) {
         for field in item.fields {
             switch field.key.lowercased() {
-            case "task", "id": continue
+            case "task", "id", AgentOrigin.fieldKey: continue
             case "title": if !field.value.isEmpty { task.title = field.value }
             case "notes": task.setNotes(field.value)
             case "status":

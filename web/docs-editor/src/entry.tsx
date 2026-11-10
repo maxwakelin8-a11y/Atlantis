@@ -34,6 +34,12 @@ window.atlantis = {
       input.dispatchEvent(new Event('input'))
     }
   },
+  /** Opens a project and puts the cursor at the end of its first doc (for debug screenshots of @mentions). */
+  openAtEnd: async (project: string) => {
+    await page.openProject(project)
+    await new Promise((r) => setTimeout(r, 300))
+    ;(page as unknown as { activeEditor?: { commands: { focus: (at: string) => void } } }).activeEditor?.commands.focus('end')
+  },
   /** Read-only round-trip check: what a save would write for `raw`, with and without the shortcut. */
   roundTrip: (raw: string) => {
     const host = document.createElement('div')

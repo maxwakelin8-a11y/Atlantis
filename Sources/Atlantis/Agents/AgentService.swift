@@ -447,8 +447,13 @@ final class AgentService {
     @ObservationIgnored var debugAutoApprove = false
 
     /// A made-up approval card in the open thread, for screenshots (`-debugApprovalCard`).
-    func debugShowApprovalCard() {
+    func debugShowApprovalCard() async {
         start()
+        // Prefer an `ask` bot's latest thread (the fixture's Coach).
+        if let ask = bots.compactMap(\.definition).first(where: { $0.autonomy == .ask }), let latest = threads[ask.id]?.first {
+            selection = .thread(bot: ask.id, id: latest.id)
+            try? await Task.sleep(for: .milliseconds(300))
+        }
         guard let thread, let bot = selectedBot else { return }
         let runID = "debug-run"
         var run = LiveRun(runID: runID, botID: bot.id, threadID: thread.id)

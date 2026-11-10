@@ -369,6 +369,20 @@ private func tempDir(_ name: String) -> URL {
         #expect(AgentOrigin.taskID(origin) == "t-aaaaaaaa" && AgentOrigin.taskID("doc:x") == nil)
     }
 
+    @Test func theOriginLinkStaysOnTheInboxItemNotTheTask() throws {
+        let add = InboxItem(kind: "task.add", title: "Read the brief", source: "agent:coach",
+                            fields: [.init(key: "due", value: "2026-11-11"), .init(key: "origin", value: "task:t-f0ace001")])
+        let task = InboxTaskActions.task(from: add)
+        #expect(task.due == DayStamp("2026-11-11") && task.field("origin") == nil)
+
+        var existing = TaskItem(title: "Essay")
+        let update = InboxItem(kind: "task.update", title: "Move it", source: "agent:coach",
+                               fields: [.init(key: "task", value: "t-1"), .init(key: "due", value: "2026-11-12"),
+                                        .init(key: "origin", value: "task:t-1")])
+        InboxTaskActions.apply(update, to: &existing, today: DayStamp("2026-11-10")!)
+        #expect(existing.due == DayStamp("2026-11-12") && existing.field("origin") == nil)
+    }
+
     @Test func botsCanWaitLongerForApproval() {
         #expect(SocketToolBackend(agentToken: "t").callTimeout == SocketToolBackend.agentCallTimeout)
         #expect(SocketToolBackend().callTimeout == 120)
