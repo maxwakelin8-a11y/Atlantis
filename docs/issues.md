@@ -42,4 +42,6 @@ Format: `- [ ] [bug|polish|perf] what happened · where · YYYY-MM-DD`
 - [x] [polish] Docs had no toolbar, slash or table menus → it's the Writer now (format bar, "/" menu, table menu) · Docs · 2026-11-07
 - [x] [bug] Quitting hung while Docs was open (save-before-quit waited on WebKit in `.terminateLater`) → save first, then quit, with a 3 s cap · App · 2026-11-07
 
+- [x] [bug] `scripts/build-app.sh` never built the app (`swift build` keeps only the last `--product`), so the installed app stayed on the 7 Nov build; helper test copies were left running with windows stacked on the real one → one product per call; test copies closed · Tooling · 2026-11-10
+- [x] [bug] Sidebar rows Today, Tasks, Inbox, Messages, Agents and Docs couldn't be clicked (`.badge` after `.tag` dropped the row's tag) → `.tag` goes last · Sidebar · 2026-11-10
 - [x] [perf] SEQTA web view stayed loaded after leaving its page → now unloads after 10 min hidden · SEQTA · 2026-11-06

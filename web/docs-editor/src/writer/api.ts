@@ -125,10 +125,14 @@ export const writerApi = {
   folderMeta: (project: string, path: string, meta: DocMeta) => st().setFolderMeta({ project, path, meta }) as Promise<{ path: string }>,
   settings: (project: string, patch: { title?: string; settings?: ProjectSettings }) =>
     st().settings({ project, ...patch }) as Promise<{ title: string; settings: ProjectSettings }>,
-  snapshot: (project: string, path: string, name: string) => st().snapshot({ project, path, name }) as Promise<{ id: string; at: string }>,
+  snapshot: (project: string, path: string, name: string, auto = false) =>
+    st().snapshot({ project, path, name, auto }) as Promise<{ id: string; at: string; skipped?: boolean }>,
   snapshots: (project: string, path: string) =>
     (st().snapshots({ project, path }) as Promise<{ snapshots: Snapshot[] }>).then((r) => r.snapshots),
   deleteSnapshot: (project: string, path: string, id: string) => st().deleteSnapshot({ project, path, id }) as Promise<{ removed: true }>,
+  /** Atlantis: the writing record (record.ts). */
+  recordRead: (project: string) => (st().recordRead({ project }) as Promise<{ text: string }>).then((r) => r.text),
+  recordAppend: (project: string, lines: unknown[]) => st().recordAppend({ project, lines }) as Promise<{ written: number }>,
   removeProject: (project: string) => st().removeProject({ project }) as Promise<{ removed: true }>,
   duplicateProject: (project: string) => st().duplicateProject({ project }) as Promise<{ id: string }>,
   export: (

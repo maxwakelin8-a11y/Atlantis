@@ -36,8 +36,10 @@ struct RootView: View {
                         subjectsGroup
                     } else {
                         Label(page.title, systemImage: page.systemImage)
-                            .tag(SidebarItem.page(page))
+                            // Badge first, tag last: with `.badge` after `.tag` the row loses its
+                            // tag and can't be selected (docs/findings.md, 2026-11-10).
                             .badge(page == .inbox ? model.inbox.pending.count : 0)
+                            .tag(SidebarItem.page(page))
                     }
                 }
             }

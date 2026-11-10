@@ -21,7 +21,10 @@ if [[ ! -f Resources/DocsEditor/editor.js ]] || [[ -n "$(find $EDITOR/src $EDITO
   (cd $EDITOR && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npm run build --silent)
 fi
 
-swift build -c $CONFIG --product Atlantis --product atlantis-mcp --product atlantis-agentd
+# One product per call: swift build only keeps the last --product flag.
+for product in Atlantis atlantis-mcp atlantis-agentd; do
+  swift build -c $CONFIG --product $product
+done
 APP=build/Atlantis.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

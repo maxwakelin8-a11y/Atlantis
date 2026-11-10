@@ -163,7 +163,17 @@ is removed.
   callouts.
 - A "/" menu to insert blocks; ⌘B/⌘I/⌘K etc.; outline sidebar from headings.
 - Autosave (no save button), with version history through local snapshots in
-  each project's `.snapshots/`.
+  each project's `.snapshots/`: a version is kept by itself every 10 minutes while you write,
+  plus named ones (added 2026-11-11, asked for by the user).
+- **Writing record** (added 2026-11-11, asked for by the user): for school authentication, the
+  Writer logs how the text came to be in `<project>/.writer-record.jsonl` (characters typed and
+  deleted per minute, every paste with its text, restores, imports and changes made outside the
+  Writer). History → "Open writing record" shows time spent, sessions, typed vs pasted, a
+  words-over-time chart and every paste, for a doc or the whole project, and saves it as a PDF
+  for a teacher. It's a plain file, not tamper-proof.
+- **Notes to self in the text** (added 2026-11-11): a ```` ```note ```` block (⌥⌘J, "/note"),
+  shown as a sticky note, never exported and not counted as words. Comments and the inspector's
+  document notes are also never exported.
 - Word count, focus mode (dims everything but the current paragraph).
 
 **Organising**

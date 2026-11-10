@@ -75,3 +75,12 @@ Reusable lessons (dated bullets).
   one-at-a-time queue; unattended runs use `suggest` instead (`Autonomy.unattended`).
 - `-debugSnapshot` with a sheet open: capture `window.attachedSheet` (its own window), and end the
   sheet before `NSApp.terminate`, or the app never quits.
+- 2026-11-10: In a selectable SwiftUI `List` on macOS, put `.tag` **last** on a row. `.badge` after
+  `.tag` drops the tag, so the row can't be selected (clicks do nothing, the binding's setter never
+  runs). To test sidebar selection without the mouse, set `selected of row n of outline 1 …` to
+  true through System Events and read the window title; it fails the same way a click does. A
+  window on another Space has no accessibility windows until the app is frontmost.
+- 2026-11-11: ProseMirror tags pastes and drops with `tr.getMeta("uiEvent")` ("paste"/"drop") and
+  undo/redo with the `"history$"` meta, so a transaction's typed vs pasted text can be measured
+  from its steps (`record.ts measure`). Don't launch a second Atlantis copy to test while the
+  user's app is running: both use the same MCP socket path and the copy removes it at quit.

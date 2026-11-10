@@ -136,3 +136,45 @@
 - Problems: helpers stopped on API limits and when the Mac slept; resumed from WIP commits.
   All known gaps are now in docs/issues.md.
 - Next: the user tries the real app (build from `p1/integration`); fix issues slowly.
+
+## 2026-11-10: "can't click anything"
+- User couldn't click properly. Found three Atlantis copies running with windows stacked at the
+  same spot: the installed app (an old 7 Nov build) plus two leftover helper test copies on
+  `/tmp` fixtures. Closed the test copies.
+- `scripts/build-app.sh` was broken: `swift build` keeps only the last `--product`, so the app
+  itself was never rebuilt. Fixed (one product per call), built and installed the current app.
+- Next: user confirms clicking works in the new build; if not, get the exact page and control.
+
+## 2026-11-10: sidebar rows couldn't be clicked
+- User could only click Subjects in the sidebar. Reproduced in the installed app with real clicks:
+  Today, Tasks, Inbox, Messages, Agents and Docs did nothing; SEQTA and Settings worked.
+- Cause: in `RootView` the main rows had `.badge` after `.tag`, which drops the row's tag, so the
+  list never reported a selection. Fixed by putting `.tag` last. Built, installed, relaunched.
+- Checked: every sidebar row (and the subject rows on made-up data) opens its page; no test
+  copies left running. Unit tests not rerun (one-line view change).
+- Next: user keeps trying the app; this fix still needs its own small PR.
+
+## 2026-11-10: model benchmark (Fable 5.2 vs Opus 5.5, both medium)
+- Same brief, separate worktrees: shorten Chief hand-off Inbox titles. Both fixed it, added a
+  test, 390 tests pass; nothing committed (worktrees t3-b993f271 Fable, t3-8f768a8d Opus).
+- Fable: ~3.8 min, 13 tool calls, 6.9k output, 1.15M cache read, ~$1.6 at API rates.
+  Opus: ~3.8 min, 18 tool calls, 6.0k output, 1.32M cache read, ~$0.7. Fable ≈ 2.3× the cost.
+- Fable titled notes from the bot's answer; Opus trimmed the request. Pick one to ship as a PR.
+
+## 2026-11-11: Docs edit history, writing record, notes to self
+- User asked for an edit history from saves, a way to check everything they did in the Writer (for
+  school authentication), and notes in the text that never export.
+- Versions: the Writer now keeps the on-disk version before a save every 10 minutes (was once per
+  6 h), skipping empty docs and copies equal to the newest one. History tab lists them by day with
+  word changes; up to 300 shown.
+- Writing record (`record.ts`, `recordView.ts`): typed/deleted/pasted characters per minute, every
+  paste (first 400 characters; text copied inside the Writer counts as moving), restores, imports
+  and outside changes, appended to `<project>/.writer-record.jsonl` within a minute and on flush.
+  History → "Open writing record" (also the binder and project menus, the palette): stats, chart,
+  sessions, pastes; "Save as PDF" into Exports. Swift's writable types gain `jsonl`.
+- Notes to self: ```` ```note ```` blocks (⌥⌘J, "/note", toolbar), drawn as sticky notes by a small
+  change to GenOffice's CodeBlockView; stripped from every export; already not counted as words.
+- Tests: 95 web (new: record, notes, history-ui page test) + 389 Swift pass; round trip still
+  byte-identical. Not tried by hand in the app: a second copy would share the MCP socket with
+  the user's running app. Branch `docs/history-record`.
+- Next: user tries it (quit and reopen Atlantis); PR after they're happy.

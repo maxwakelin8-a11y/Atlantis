@@ -43,6 +43,7 @@ import Testing
 
     @Test func writesOnlyTextTypesAtomicallyAndSkipsNoOps() throws {
         #expect(throws: WriterFiles.Failure.notAllowedType("sh")) { try files.write("\(root)/run.sh", text: "x") }
+        try files.write("\(root)/Proj/.writer-record.jsonl", text: "{}\n") // the writing record
         try files.write("\(root)/Proj/Draft/One.md", text: "Hello\n")
         let url = files.root.appendingPathComponent("Proj/Draft/One.md")
         let before = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate

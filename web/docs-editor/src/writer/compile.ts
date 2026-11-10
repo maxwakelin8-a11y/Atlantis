@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import { countWords, type BinderNode, type ExportFormat } from "./api";
+import { stripNotes } from "./notes";
 
 /**
  * Compile, after Scrivener: stitches the documents under Draft (or any folder) into one paper.
@@ -81,7 +82,8 @@ export function collectSections(roots: BinderNode[], sectionTitles: boolean): Se
   const out: Section[] = [];
   const visit = (n: BinderNode, level: number) => {
     if (n.meta?.compile === false) return;
-    const body = n.kind === "doc" ? String(n.body ?? "").trim() : "";
+    // Atlantis: notes to self (```note blocks) never leave the Writer.
+    const body = n.kind === "doc" ? stripNotes(String(n.body ?? "")).trim() : "";
     out.push({
       level,
       title: n.title,

@@ -44,8 +44,8 @@ public struct WriterFiles: Sendable {
         public let mtime: Double
     }
 
-    /// Text files the page may write (docs, the project file, snapshots, text exports).
-    public static let writableExtensions: Set<String> = ["md", "markdown", "txt", "json", "html"]
+    /// Text files the page may write (docs, the project file, snapshots, text exports, the writing record).
+    public static let writableExtensions: Set<String> = ["md", "markdown", "txt", "json", "jsonl", "html"]
     public static let maxRead = 20_000_000
     /// Image types the page may write, into a project's `assets` folder only.
     public static let writableImageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp"]
