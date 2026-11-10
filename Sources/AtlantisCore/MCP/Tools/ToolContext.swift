@@ -28,6 +28,8 @@ public struct MCPToolContext: Sendable {
     public var calendar: Calendar
     /// Agents can't ask for another SEQTA sync inside this window (no polling).
     public var minRefreshInterval: TimeInterval
+    /// Queues a run of another bot for `atlantis_agent_delegate` (the app's team queue). nil: not available.
+    public var delegate: AgentDelegateHandler?
 
     public init(vault: @escaping @Sendable () -> VaultPaths,
                 writerRoot: @escaping @Sendable () -> URL,
@@ -38,7 +40,8 @@ public struct MCPToolContext: Sendable {
                 exportDocument: @escaping @Sendable (String, String, URL) async throws -> Void,
                 now: @escaping @Sendable () -> Date = { Date() },
                 calendar: Calendar = .current,
-                minRefreshInterval: TimeInterval = 300) {
+                minRefreshInterval: TimeInterval = 300,
+                delegate: AgentDelegateHandler? = nil) {
         self.vault = vault
         self.writerRoot = writerRoot
         self.cache = cache
@@ -49,6 +52,7 @@ public struct MCPToolContext: Sendable {
         self.now = now
         self.calendar = calendar
         self.minRefreshInterval = minRefreshInterval
+        self.delegate = delegate
     }
 
     var writer: WriterFiles { WriterFiles(root: writerRoot()) }

@@ -2,10 +2,13 @@
 
 A bot is a markdown file in the LifeOS vault: `machine/atlantis/agents/<id>.md`. The file name
 (lowercase letters, digits, dashes) is its id. Atlantis writes the default bots (`school.md`,
-`coach.md`, `builder.md`) when it first needs the bots, each only if it doesn't exist, and never
-overwrites them. Coach (planning, triggers chat + task) and Builder (writing, chat + mention) are
+`coach.md`, `builder.md`, `chief.md`, `scout.md`) when it first needs the bots, each only if it
+doesn't exist, and never overwrites them. Coach (planning, chat + task + morning + overdue),
+Builder (writing, chat + mention), Chief (routing, chat) and Scout (read-only research, no web) are
 suggest-only by default. A School file written by M5 has `triggers: [chat]`: add `task` and
-`mention` to use it from Tasks and Docs.
+`mention` to use it from Tasks and Docs. Files written before M7 keep their old triggers: add
+`schedule morning` and `event task.overdue` to Coach, and `event seqta.assessment.new` (plus the
+`atlantis_task_add` tool) to School, to have them run on their own.
 
 ```markdown
 ---
@@ -13,7 +16,7 @@ name: School
 avatar: 🎓
 model: sonnet            # haiku, sonnet, opus, fable, or a claude-… id
 autonomy: suggest        # suggest (Inbox only) · ask · act (allow-listed actions run)
-triggers: [chat, task, mention]  # schedule HH:MM and event <name> come in M7
+triggers: [chat, task, mention]  # also: schedule morning, event seqta.assessment.new, event task.overdue
 tools:                   # Atlantis MCP tool names; the bot gets these and nothing else
   - atlantis_today
   - atlantis_inbox_post
@@ -71,6 +74,42 @@ Agents page ─ AgentService ──(Unix socket 0600, same user)──▶ atlant
   makes carries the same `origin` (it never gets copied onto a task when accepted). The task panel
   shows "Coach is working…", "waiting for your approval", or "Done, see Inbox" (after a relaunch it
   reads the latest note from the Inbox).
+
+## The team (M7)
+
+**Bots on their own** (Settings ▸ Bots on Their Own, **off by default**). Chat, assigned tasks and
+@mentions work either way. Atlantis runs no timers, so triggers hang off events it already has:
+
+| Trigger | When |
+| --- | --- |
+| `schedule morning` | Once per local day: right after a SEQTA sync (the morning one, or the day's first refresh); if no sync happens, at the first launch or wake from the morning time (07:00, Settings). |
+| `event task.overdue` | At the morning trigger, **one** run with every overdue task, only when something is overdue. A bot with both gets one run. |
+| `event seqta.assessment.new` | After a sync, one run per assessment seen for the first time (the same dedupe that proposes it in the Inbox, so once ever). |
+
+"Ran today" and the day's run count live in `~/Library/Application Support/Atlantis/agents/triggers.json`
+(not the vault), so relaunching doesn't repeat them.
+
+**Queue and limits.** Automatic runs (and hand-offs) wait in a first-in, first-out queue and run
+one at a time; the next starts when one ends. A per-day cap (default 10, 1–30, Settings) counts
+started plus waiting runs; past it, runs are skipped and shown as skipped on Today. Each bot's own
+`daily_cost_usd` applies on top. The same bot can't be queued twice for the same thing. Turning
+the switch off drops waiting automatic runs (a running one finishes). No one watches these runs,
+so an `ask` bot runs as `suggest`: its writes wait in the Inbox instead of holding the queue on an
+approval card.
+
+**Chief and `atlantis_agent_delegate {bot, request}`.** "Ask the team" on the Agents page chats
+with Chief, whose only tools are delegate and Inbox post. Delegate queues a run of another bot:
+only existing bots that allow `chat`, never itself, at most 3 per run, and a handed-on run can't
+delegate again (depth 1). It counts against the daily cap and the target's cost cap. Plain MCP
+clients can't delegate (the tool needs a bot's grant). The bot's answer goes to the Inbox, linked
+to Chief's thread (`origin: thread:chief/<id>`), and Chief's thread lists each hand-off's status.
+
+**Today.** The Team card shows the morning plan's first lines, bot suggestions waiting in the
+Inbox, and today's runs (bot, trigger, status; click to open the thread). It's hidden while bots
+did nothing today and can't run on their own. The Tasks card warns when today's estimates (30 min
+when a task has none) pass the free time between classes until 21:30. **End of Day** goes through
+today's open tasks (done, tomorrow, drop or keep), then adds one line under `### Shutdown` in the
+daily note's machine block; later syncs keep it.
 
 ## Autonomy (enforced in the app's gate, `WriteRoute`)
 

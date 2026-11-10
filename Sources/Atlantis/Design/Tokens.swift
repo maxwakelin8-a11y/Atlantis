@@ -45,6 +45,10 @@ enum Size {
     static let nowLine: CGFloat = 1.5
     /// Narrowest card in a grid of cards (assessments due).
     static let cardMinWidth: CGFloat = 200
+    /// A sheet over a page (End of day).
+    static let sheetWidth: CGFloat = 640
+    /// Tallest a sheet's list gets before it scrolls.
+    static let sheetListMaxHeight: CGFloat = 360
 }
 
 enum Typo {

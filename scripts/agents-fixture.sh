@@ -12,6 +12,8 @@
 #   -debugAgentTask "forces report" -debugAgentBot coach -debugAutoApprove YES   (Coach asks first)
 #   -debugAgentMention /tmp/agents-writer/Essay/Draft/Intro.md -debugAgentBot builder \
 #       -debugAgentRequest "Tighten the first paragraph."
+#   -botsRunOnTheirOwn YES -debugNow 07:30 -debugMorning YES                    (morning trigger, M7)
+#   -debugTeamAsk "Find my notes on forces and when the report is due"          (Chief hands off, M7)
 # Pass --no-thread to skip the made-up thread.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -69,7 +71,7 @@ name: Coach
 avatar: 🧭
 model: haiku
 autonomy: ask
-triggers: [chat, task]
+triggers: [chat, task, schedule morning, event task.overdue]
 tools: [atlantis_today, atlantis_tasks_list, atlantis_task_add, atlantis_task_update, atlantis_inbox_post]
 budget:
   max_steps: 6
@@ -95,6 +97,41 @@ budget:
 
 You are Builder, a writing helper. Give short, specific feedback and keep the writer's voice.
 When an edit is clearly wanted, propose the full new text with atlantis_doc_write.
+EOF
+
+cat > "$agents/chief.md" <<'EOF'
+---
+name: Chief
+avatar: 🧑‍✈️
+model: haiku
+autonomy: suggest
+triggers: [chat]
+tools: [atlantis_agent_delegate, atlantis_inbox_post]
+budget:
+  max_steps: 4
+  daily_cost_usd: 0.15
+---
+
+You are Chief. Route the user's request to the right bot on the team with atlantis_agent_delegate
+(School for school data, Coach for planning, Builder for writing, Scout for finding things). Don't
+do the work yourself. Reply in one short line: who you asked.
+EOF
+
+cat > "$agents/scout.md" <<'EOF'
+---
+name: Scout
+avatar: 🔭
+model: haiku
+autonomy: suggest
+triggers: [chat, task, mention]
+tools: [atlantis_today, atlantis_tasks_list, atlantis_school_assessments, atlantis_docs_list, atlantis_docs_search, atlantis_doc_read, atlantis_inbox_post]
+budget:
+  max_steps: 6
+  daily_cost_usd: 0.25
+---
+
+You are Scout. Find things in the user's own docs, tasks and school data, and say where each came
+from. No web. Keep it short.
 EOF
 
 # A task assigned to Coach (the `agent::` field).

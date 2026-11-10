@@ -11,6 +11,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                              planURL: debug.planURL ?? PlanFile.defaultURL,
                              clockOffset: debug.clockOffset)
         if debug.seqtaCacheURL != nil { model.seqtaSync.autoSyncEnabled = false }
+        if debug.morning || debug.teamAsk != nil {
+            model.triggerLedgerURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("atlantis-triggers-\(UUID().uuidString).json")
+        }
+        if debug.endOfDay { model.debugEndOfDay = true }
         if let code = debug.subject { model.subjectCode = code }
         if let seconds = debug.seqtaUnloadAfter { model.seqtaUnloadAfter = .seconds(seconds) }
         return model
@@ -86,6 +91,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 NSApp.terminate(nil)
             }
         }
+        if debug.morning {
+            Task { [model] in
+                try? await Task.sleep(for: .milliseconds(500)) // after the window is up; debug only
+                model.agents.start()
+                model.teamTriggers.launchOrWake()
+                await model.agents.debugWaitForQueue()
+                print(model.agents.debugTeamReport())
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if let text = debug.teamAsk {
+            Task { [model] in
+                model.page = .agents
+                print(await model.agents.debugTeamAsk(text))
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if let bot = debug.agentOpen {
+            Task { [model] in
+                model.page = .agents
+                model.agents.start()
+                model.agents.debugOpenLatest(bot: bot)
+            }
+        }
         if debug.approvalCard {
             Task { [model] in
                 try? await Task.sleep(for: .milliseconds(600))
@@ -156,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 } catch {
                     Log.app.error("Snapshot failed: \(error.localizedDescription, privacy: .public)")
                 }
+                if let sheet = window.attachedSheet { window.endSheet(sheet) } // an open sheet blocks quitting
                 NSApp.terminate(nil)
             }
         }

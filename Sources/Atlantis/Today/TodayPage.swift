@@ -11,6 +11,7 @@ struct TodayPage: View {
     let model: AppModel
 
     @State private var errorMessage: String?
+    @State private var endOfDay: [TaskItem]?
 
     private var store: TodayStore { model.today }
     private var tasks: TaskStore { model.tasks }
@@ -46,6 +47,15 @@ struct TodayPage: View {
         .task {
             model.startToday()
             store.reloadDailyNote()
+            model.inbox.start()
+            model.agents.refreshToday()
+            if model.debugEndOfDay {
+                model.debugEndOfDay = false
+                endOfDay = Shutdown.openTasks(store.model(tasks: tasks.tasks))
+            }
+        }
+        .sheet(item: Binding(get: { endOfDay.map(EndOfDayTasks.init) }, set: { endOfDay = $0?.tasks })) { list in
+            EndOfDaySheet(model: model, tasks: list.tasks)
         }
     }
 
@@ -58,6 +68,13 @@ struct TodayPage: View {
                 Text(summary(today)).font(Typo.secondary).foregroundStyle(Palette.textSecondary)
             }
             Spacer(minLength: Space.m)
+            Button {
+                endOfDay = Shutdown.openTasks(today)
+            } label: {
+                Label("End of Day", systemImage: "moon")
+            }
+            .controlSize(.small)
+            .help("Wrap up today's tasks and add a line to the daily note")
             SeqtaSyncControl(sync: model.seqtaSync, openSeqta: { model.page = .seqta },
                              openSettings: { model.page = .settings }, now: model.now())
         }
@@ -92,13 +109,38 @@ struct TodayPage: View {
     private func side(_ today: TodayModel, minute: Int) -> some View {
         VStack(alignment: .leading, spacing: Space.l) {
             NextUpCard(today: today, minute: minute)
+            team
             SectionCard(title: "Tasks", systemImage: "checklist") {
+                let plan = DayPlan.build(today, minute: minute)
+                if plan.isOver {
+                    Label(plan.summary, systemImage: "exclamationmark.triangle")
+                        .font(Typo.caption)
+                        .foregroundStyle(Palette.warning)
+                        .help("Estimates (30 min when a task has none) against the free time between classes, until \(TodayTime.format(DayPlan.dayEnd))")
+                }
                 TodayTaskList(sections: today.taskSections, today: today.day, toggle: toggle(_:),
                               openTasks: { model.page = .tasks })
             }
             SectionCard(title: "Top 3", systemImage: "star") {
                 TopThreeList(items: today.topThree, noteURL: store.dailyNoteURL)
             }
+        }
+    }
+
+    /// The Team card (M7). Hidden while bots haven't done anything today and can't run on their own.
+    @ViewBuilder private var team: some View {
+        let agents = model.agents
+        let card = TeamCard.build(threads: agents.todayThreads, live: agents.liveForCard, queued: agents.queue.waiting,
+                                  skipped: agents.skipped, bots: agents.definitions, inbox: model.inbox.items,
+                                  day: DayStamp(model.now()), automaticRuns: AppSettings.teamSettings.automaticRuns)
+        if !card.isEmpty || card.automaticRuns {
+            TeamCardView(card: card,
+                         openThread: { bot, id in
+                             agents.open(thread: id, bot: bot)
+                             model.page = .agents
+                         },
+                         openInbox: { model.page = .inbox },
+                         openAgents: { model.page = .agents })
         }
     }
 
@@ -507,4 +549,10 @@ struct TopThreeList: View {
             }
         }
     }
+}
+
+/// The End of day sheet's tasks, as a sheet item.
+private struct EndOfDayTasks: Identifiable {
+    let tasks: [TaskItem]
+    var id: String { tasks.map(\.id).joined(separator: ",") }
 }

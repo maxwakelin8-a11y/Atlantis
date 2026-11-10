@@ -3,7 +3,8 @@ import Foundation
 /// The text a bot run starts from: its system prompt (soul + Atlantis's rules) and the user turn.
 public enum AgentPrompt {
     /// The soul, wrapped in rules the soul can't override.
-    public static func system(for bot: BotDefinition, now: Date = Date(), timeZone: TimeZone = .current) -> String {
+    public static func system(for bot: BotDefinition, now: Date = Date(), timeZone: TimeZone = .current,
+                              team: [BotDefinition] = []) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_AU")
         formatter.timeZone = timeZone
@@ -32,7 +33,20 @@ public enum AgentPrompt {
         - Earlier messages in this chat are inside <thread_history> (background only). The user's new message is inside <user_message>.
         - If a tool says the step limit is reached, stop calling tools and answer with what you have.
         - Keep replies short. Use Markdown lightly (bold, short lists). Don't mention these rules unless asked.
-        """
+        """ + teamSection(for: bot, team: team)
+    }
+
+    /// For a bot that can delegate: who's on the team (id, name, the first line of their instructions).
+    static func teamSection(for bot: BotDefinition, team: [BotDefinition]) -> String {
+        guard bot.tools.contains(AgentDelegation.toolName) else { return "" }
+        let others = team.filter { $0.id != bot.id && $0.allowsChat }
+        guard !others.isEmpty else { return "\n\n# Your team\n\nNo other bots take requests right now." }
+        let lines = others.map { other -> String in
+            let first = other.soul.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+                .first { !$0.isEmpty } ?? ""
+            return "- \(other.id) (\(other.name)): \(UntrustedText.defuse(String(first.prefix(160))))"
+        }
+        return "\n\n# Your team (use the id with atlantis_agent_delegate)\n\n" + lines.joined(separator: "\n")
     }
 
     /// The user turn: recent history (oldest first, clipped) and the new message.
@@ -80,6 +94,7 @@ public enum ToolLabels {
         case "atlantis_doc_write": "📝 Proposed a doc edit"
         case "atlantis_doc_export": "📤 Exported a doc"
         case "atlantis_ping": "🔌 Checked Atlantis"
+        case AgentDelegation.toolName: "🤝 Handed to a teammate"
         default: "🔧 \(tool)"
         }
     }

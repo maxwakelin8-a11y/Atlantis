@@ -69,6 +69,16 @@ struct DebugOptions {
     var autoApprove = false
     /// `-debugApprovalCard YES`: show a made-up approval card in the open thread (screenshots).
     var approvalCard = false
+    /// `-debugMorning YES`: fire the bots' morning trigger as a launch or wake would (needs
+    /// `-botsRunOnTheirOwn YES`), wait for the queue, print today's runs and quit. Uses a temp
+    /// trigger ledger. Real runs cost real usage: use it with `-vaultPath` on a made-up vault.
+    var morning = false
+    /// `-debugTeamAsk "…"`: ask the team (Chief), wait for Chief and every hand-off, print and quit.
+    var teamAsk: String?
+    /// `-debugEndOfDay YES`: open Today with the End of day sheet showing (screenshots).
+    var endOfDay = false
+    /// `-debugAgentOpen chief`: open the Agents page on that bot's latest thread (or a new chat).
+    var agentOpen: String?
 
     static func fromArguments(_ defaults: UserDefaults = .standard) -> DebugOptions {
         let args = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
@@ -115,6 +125,10 @@ struct DebugOptions {
         if let request = args["debugAgentRequest"] as? String { options.agentRequest = request }
         options.autoApprove = (args["debugAutoApprove"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.approvalCard = (args["debugApprovalCard"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
+        options.morning = (args["debugMorning"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
+        options.teamAsk = args["debugTeamAsk"] as? String
+        options.endOfDay = (args["debugEndOfDay"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
+        options.agentOpen = args["debugAgentOpen"] as? String
         options.showHUD = (args["debugHUD"] as? String).map { ["yes", "1", "true"].contains($0.lowercased()) } ?? false
         options.pageSequence = ((args["debugPageSequence"] as? String) ?? "")
             .split(separator: ",")
@@ -135,6 +149,8 @@ enum Snapshot {
     /// Recording permission for whatever launched the app. Web views don't paint while their
     /// window is covered, so each one's own WebKit snapshot is drawn on top at its frame.
     static func save(_ window: NSWindow, to url: URL) async throws {
+        // A sheet is its own window: capture it instead when one is showing (End of day).
+        let window = window.attachedSheet ?? window
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         process.arguments = ["-x", "-o", "-l", String(window.windowNumber), url.path]

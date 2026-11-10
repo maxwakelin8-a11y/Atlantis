@@ -18,6 +18,8 @@ public enum MCPCaller {
     /// What started the run, e.g. `task:t-ab12cd34` or `doc:Essay/Draft/Intro.md`. Inbox items
     /// made during the run carry it as `[origin:: …]` so they link back.
     @TaskLocal public static var agentOrigin: String?
+    /// 0 for a run Atlantis or the user started; 1 for a run another bot handed over (M7).
+    @TaskLocal public static var agentDepth: Int = 0
 
     public static let metaKey = "atlantis/client"
     /// `_meta` key for the agent grant token (`ATLANTIS_AGENT_TOKEN` in the helper's environment).

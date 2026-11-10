@@ -52,16 +52,25 @@ public struct AgentThread: Sendable, Equatable, Identifiable {
     public var created: Date
     public var updated: Date
     public var messages: [ThreadMessage]
+    /// What started the thread's first run (nil in files from before M7: a chat).
+    public var trigger: RunTrigger?
+    /// What the run was about (`task:…`, `doc:…`, `morning:…`, `thread:chief/<id>`); see `AgentOrigin`.
+    public var origin: String?
 
     public init(id: String = ThreadLog.newID(), bot: String, title: String, created: Date, updated: Date? = nil,
-                messages: [ThreadMessage] = []) {
+                messages: [ThreadMessage] = [], trigger: RunTrigger? = nil, origin: String? = nil) {
         self.id = id
         self.bot = bot
         self.title = title
         self.created = created
         self.updated = updated ?? created
         self.messages = messages
+        self.trigger = trigger
+        self.origin = origin
     }
+
+    /// How the latest run went, if one finished.
+    public var lastStatus: RunSummary.Status? { messages.last(where: { $0.run != nil })?.run?.status }
 
     public var runs: Int { messages.filter { $0.run != nil }.count }
     public var steps: Int { messages.compactMap(\.run?.steps).reduce(0, +) }
@@ -81,6 +90,25 @@ public struct ThreadSummary: Sendable, Equatable, Identifiable {
     public var title: String
     public var updated: Date
     public var url: URL
+    public var created: Date
+    /// What started it (nil: a chat, or a file from before M7).
+    public var trigger: RunTrigger?
+    /// The latest run's status (nil: no run has finished yet).
+    public var status: RunSummary.Status?
+    public var origin: String?
+
+    public init(id: String, bot: String, title: String, updated: Date, url: URL, created: Date? = nil,
+                trigger: RunTrigger? = nil, status: RunSummary.Status? = nil, origin: String? = nil) {
+        self.id = id
+        self.bot = bot
+        self.title = title
+        self.updated = updated
+        self.url = url
+        self.created = created ?? updated
+        self.trigger = trigger
+        self.status = status
+        self.origin = origin
+    }
 }
 
 /// Writes and reads thread logs. The file is readable markdown (front matter, then each message
@@ -121,6 +149,9 @@ public enum ThreadLog {
         out += "runs: \(thread.runs)\n"
         out += "steps: \(thread.steps)\n"
         out += "cost_usd: \(String(format: "%.4f", thread.costUSD))\n"
+        if let trigger = thread.trigger { out += "trigger: \(FrontMatter.quoted(trigger.raw))\n" }
+        if let origin = thread.origin { out += "origin: \(FrontMatter.quoted(origin))\n" }
+        if let status = thread.lastStatus { out += "status: \(status.rawValue)\n" }
         out += "---\n"
 
         for message in thread.messages {
@@ -167,7 +198,9 @@ public enum ThreadLog {
         }
         let created = fields["created"]?.string.flatMap { iso.date(from: $0) } ?? Date(timeIntervalSince1970: 0)
         let updated = fields["updated"]?.string.flatMap { iso.date(from: $0) } ?? created
-        var thread = AgentThread(id: id, bot: bot, title: fields["title"]?.string ?? "Chat", created: created, updated: updated)
+        var thread = AgentThread(id: id, bot: bot, title: fields["title"]?.string ?? "Chat", created: created, updated: updated,
+                                 trigger: fields["trigger"]?.string.flatMap(RunTrigger.init(raw:)),
+                                 origin: fields["origin"]?.string)
 
         var current: (attributes: [String: String], lines: [String])?
         func finish() {
@@ -212,20 +245,26 @@ public enum ThreadLog {
         vault.threadsDir.appendingPathComponent(bot, isDirectory: true)
     }
 
-    /// The bot's threads, newest first. Reads only the front matter of each file.
-    public static func list(vault: VaultPaths, bot: String) -> [ThreadSummary] {
+    /// The bot's threads, newest first. Reads only the front matter of each file. With `startedOn`
+    /// (`2026-11-10`), only threads whose file name starts with that day are read (Today's card).
+    public static func list(vault: VaultPaths, bot: String, startedOn day: String? = nil) -> [ThreadSummary] {
         guard BotFile.isValidID(bot) else { return [] }
         let dir = folder(vault: vault, bot: bot)
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil,
                                                                   options: [.skipsHiddenFiles])) ?? []
         let iso = isoFormatter(.current)
-        return files.filter { $0.pathExtension == "md" }.compactMap { url -> ThreadSummary? in
-            guard let text = try? TextFile.read(url), let (yaml, _) = FrontMatter.split(text),
-                  let fields = try? FrontMatter.parse(yaml), let id = fields["id"]?.string else { return nil }
-            let updated = fields["updated"]?.string.flatMap { iso.date(from: $0) } ?? Date(timeIntervalSince1970: 0)
-            return ThreadSummary(id: id, bot: bot, title: fields["title"]?.string ?? "Chat", updated: updated, url: url)
-        }
-        .sorted { $0.updated > $1.updated }
+        return files.filter { url in url.pathExtension == "md" && (day.map { url.lastPathComponent.hasPrefix($0 + "-") } ?? true) }
+            .compactMap { url -> ThreadSummary? in
+                guard let text = try? TextFile.read(url), let (yaml, _) = FrontMatter.split(text),
+                      let fields = try? FrontMatter.parse(yaml), let id = fields["id"]?.string else { return nil }
+                let updated = fields["updated"]?.string.flatMap { iso.date(from: $0) } ?? Date(timeIntervalSince1970: 0)
+                return ThreadSummary(id: id, bot: bot, title: fields["title"]?.string ?? "Chat", updated: updated, url: url,
+                                     created: fields["created"]?.string.flatMap { iso.date(from: $0) },
+                                     trigger: fields["trigger"]?.string.flatMap(RunTrigger.init(raw:)),
+                                     status: fields["status"]?.string.flatMap(RunSummary.Status.init(rawValue:)),
+                                     origin: fields["origin"]?.string)
+            }
+            .sorted { $0.updated > $1.updated }
     }
 
     public static func load(_ url: URL) throws -> AgentThread {

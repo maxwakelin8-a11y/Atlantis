@@ -67,3 +67,11 @@ Reusable lessons (dated bullets).
   project; wait a tick before moving the selection, or it jumps back to position 1.
 - Bash heredocs: a Python script in `<<'EOF'` that itself contains `<<'EOF'` lines (shell
   fixtures) ends early. Write such scripts to a file first.
+- Live bot checks next to another running Atlantis (the installed app, or a debug build someone
+  left open): set `ATLANTIS_MCP_SOCKET` and `ATLANTIS_AGENTD_SOCKET` to a fresh `mktemp -d`
+  folder. Otherwise the CLI's helper reaches the other app's socket, sees the wrong tool list and
+  the lockdown check stops the run ("offered more than Coach's own tools").
+- An `ask` bot started by a trigger would wait on an approval card no one sees and hold the
+  one-at-a-time queue; unattended runs use `suggest` instead (`Autonomy.unattended`).
+- `-debugSnapshot` with a sheet open: capture `window.attachedSheet` (its own window), and end the
+  sheet before `NSApp.terminate`, or the app never quits.

@@ -71,6 +71,12 @@ final class AgentService {
     /// The last finished task run per task id (this session); after a relaunch the Inbox is the record.
     private(set) var taskResults: [String: TaskRunResult] = [:]
     private(set) var todayCost: [String: Double] = [:]
+    /// Automatic runs (morning, events, hand-offs from Chief) waiting their turn, one at a time (M7).
+    private(set) var queue = RunQueue()
+    /// Automatic runs that never started today (daily cap, cost cap, switched off).
+    private(set) var skipped: [SkippedRun] = []
+    /// Threads started today, every bot (Today's Team card). Refreshed when a run starts or ends.
+    private(set) var todayThreads: [ThreadSummary] = []
     /// nil until checked; then the CLI's path or "" when it isn't installed.
     private(set) var cliPath: String?
     private(set) var vaultMissing = false
@@ -101,16 +107,21 @@ final class AgentService {
     @ObservationIgnored private let tasks: @MainActor () -> TaskStore
     @ObservationIgnored private let client = AgentDaemonClient()
     @ObservationIgnored private let ledger = UsageLedger()
+    /// What automatic runs happened today (daily cap, morning once a day).
+    @ObservationIgnored let triggerLedger: TriggerLedger
+    /// Hand-offs per delegating run (`AgentDelegation.maxPerRun`).
+    @ObservationIgnored private var delegations: [String: Int] = [:]
     @ObservationIgnored private var daemon: Process?
     @ObservationIgnored private var started = false
-    @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private let now: @Sendable () -> Date
 
     init(mcp: MCPService, inbox: @escaping @MainActor () -> InboxStore, tasks: @escaping @MainActor () -> TaskStore,
-         now: @escaping () -> Date = { Date() }) {
+         now: @escaping @Sendable () -> Date = { Date() }, triggerLedger: TriggerLedger? = nil) {
         self.mcp = mcp
         self.inbox = inbox
         self.tasks = tasks
         self.now = now
+        self.triggerLedger = triggerLedger ?? TriggerLedger(now: now)
         mcp.approvals.onChange = { [weak self] list in
             Task { @MainActor [weak self] in self?.approvalsChanged(list) }
         }
@@ -175,7 +186,7 @@ final class AgentService {
         guard !text.isEmpty, live == nil, let bot = selectedBot else { return }
         draft = ""
         let time = now()
-        var thread = self.thread ?? AgentThread(bot: bot.id, title: ThreadLog.title(from: text), created: time)
+        var thread = self.thread ?? AgentThread(bot: bot.id, title: ThreadLog.title(from: text), created: time, trigger: .chat)
         let history = thread.messages
         thread.messages.append(ThreadMessage(role: .user, at: time, text: text))
         thread.updated = time
@@ -210,22 +221,29 @@ final class AgentService {
         var origin: String
         /// Short words for the Inbox title ("Turing essay draft").
         var subject: String
+        /// Started by Atlantis (morning, an event, a hand-off): no one is watching its thread, so an
+        /// `ask` bot runs as `suggest` (its writes wait in the Inbox instead of blocking the queue).
+        var unattended = false
     }
 
-    private func run(bot: BotDefinition, threadID: String, prompt: String, runID: String, job: Job?) async {
+    @discardableResult
+    private func run(bot: BotDefinition, threadID: String, prompt: String, runID: String, job: Job?,
+                     depth: Int = 0) async -> RunSummary.Status {
         let summary: RunSummary
         if let refusal = ledger.refusal(bot: bot.id, name: bot.name, cap: bot.dailyCostUSD) {
             summary = RunSummary(status: .costLimit, message: refusal, todayCostUSD: ledger.spentToday(bot: bot.id))
         } else if let helper = mcp.helperURL, mcp.helperExists {
+            let autonomy = job?.unattended == true ? Autonomy.unattended(bot.autonomy) : bot.autonomy
             let token = mcp.agentGrants.issue(AgentGrant(bot: bot.id, tools: Set(bot.tools), maxCalls: bot.maxSteps,
-                                                         autonomy: bot.autonomy, runID: runID, origin: job?.origin))
+                                                         autonomy: autonomy, runID: runID, origin: job?.origin,
+                                                         depth: depth))
             defer {
                 mcp.agentGrants.revoke(token)
                 mcp.approvals.cancel(runID: runID)
             }
             let spec = AgentRunSpec(runID: runID, bot: bot.id, botName: bot.name, provider: bot.provider, model: bot.model,
                                     tools: bot.tools, maxSteps: bot.maxSteps, dailyCostUSD: bot.dailyCostUSD,
-                                    systemPrompt: AgentPrompt.system(for: bot, now: now()),
+                                    systemPrompt: AgentPrompt.system(for: bot, now: now(), team: loadedBots),
                                     prompt: prompt,
                                     grantToken: token, mcpHelperPath: helper.path, mcpSocketPath: mcp.socketPath,
                                     claudePath: AppSettings.claudePath)
@@ -234,6 +252,8 @@ final class AgentService {
             summary = RunSummary(status: .refused, message: "The atlantis-mcp helper isn't next to this build. Run scripts/build-app.sh.")
         }
         await finish(summary, bot: bot, threadID: threadID, runID: runID, job: job)
+        delegations[runID] = nil
+        return summary.status
     }
 
     /// Runs on the daemon, applying events in order on the main actor.
@@ -347,7 +367,19 @@ final class AgentService {
     }
 
     private func refreshThreads(bot: String) {
-        threads[bot] = ThreadLog.list(vault: vault, bot: bot)
+        let list = ThreadLog.list(vault: vault, bot: bot)
+        threads[bot] = list
+        let day = DayStamp(now())
+        todayThreads = todayThreads.filter { $0.bot != bot } + list.filter { DayStamp($0.created) == day }
+    }
+
+    /// Re-reads today's threads for every bot (Today's Team card, when it appears). Reads only
+    /// files whose names start with today's date.
+    func refreshToday() {
+        let day = DayStamp(now()).description
+        let vault = self.vault
+        todayThreads = loadedBots.flatMap { ThreadLog.list(vault: vault, bot: $0.id, startedOn: day) }
+        todayCost = ledger.today().mapValues(\.costUSD)
     }
 
     /// Changes the selection without reloading the open thread from disk.
@@ -445,6 +477,45 @@ final class AgentService {
     }
 
     @ObservationIgnored var debugAutoApprove = false
+
+    /// Waits until no run is going and nothing is queued (debug only).
+    func debugWaitForQueue() async {
+        try? await Task.sleep(for: .milliseconds(300))
+        while !runs.isEmpty || !queue.all.isEmpty { await debugWaitForRuns() }
+    }
+
+    /// Today's runs and what they posted (`-debugMorning`).
+    func debugTeamReport() -> String {
+        refreshToday()
+        let store = inbox()
+        store.reload()
+        var out = ["Runs today: \(todayThreads.count), skipped: \(skipped.count), automatic runs counted: \(triggerLedger.runsToday)"]
+        for thread in todayThreads.sorted(by: { $0.created < $1.created }) {
+            out.append("- \(thread.bot) [\(thread.trigger?.raw ?? "chat")] \(thread.status?.rawValue ?? "running"): \(thread.title)")
+        }
+        for skip in skipped { out.append("- skipped \(skip.bot) [\(skip.trigger.raw)]: \(skip.reason)") }
+        let origins = Set(todayThreads.compactMap(\.origin))
+        for origin in origins.sorted() { out.append("--- \(origin)\n" + debugReport(origin: origin)) }
+        return out.joined(separator: "\n")
+    }
+
+    /// Asks Chief, waits for its hand-offs, prints everything (`-debugTeamAsk`).
+    func debugTeamAsk(_ text: String) async -> String {
+        start()
+        guard let chief = loadedBots.first(where: \.isRouter) else { return "No router bot (Chief)" }
+        let reply = await debugAsk(text, bot: chief.id)
+        guard let thread else { return reply }
+        await debugWaitForQueue()
+        let handed = handoffs(fromBot: chief.id, threadID: thread.id)
+            .map { "- \($0.bot): \($0.title) [\($0.status?.rawValue ?? "?")]" }
+        return reply + "\nHand-offs:\n" + (handed.isEmpty ? "(none)" : handed.joined(separator: "\n"))
+            + "\n--- Inbox\n" + debugReport(origin: AgentDelegation.origin(fromBot: chief.id, threadID: thread.id))
+    }
+
+    /// Selects a bot's latest thread, or a new chat with it (`-debugAgentOpen`).
+    func debugOpenLatest(bot id: String) {
+        selection = threads[id]?.first.map { .thread(bot: id, id: $0.id) } ?? .newChat(id)
+    }
 
     /// A made-up approval card in the open thread, for screenshots (`-debugApprovalCard`).
     func debugShowApprovalCard() async {
@@ -572,7 +643,7 @@ final class AgentService {
         taskResults[task.id] = nil
         startJob(bot: bot, title: AgentTaskJob.threadTitle(task), userText: AgentTaskJob.threadMessage(task),
                  prompt: AgentTaskJob.prompt(task: task, today: tasks().today),
-                 job: Job(origin: origin, subject: task.title))
+                 job: Job(origin: origin, subject: task.title), trigger: .task)
         return nil
     }
 
@@ -596,20 +667,149 @@ final class AgentService {
         startJob(bot: bot, title: AgentMention.threadTitle(clean), userText: "In “\(name)”: \(clean)",
                  prompt: AgentMention.prompt(request: clean, path: relative, text: text,
                                              canWriteDocs: bot.tools.contains("atlantis_doc_write")),
-                 job: Job(origin: origin, subject: "\(name): \(ThreadLog.title(from: clean))"))
+                 job: Job(origin: origin, subject: "\(name): \(ThreadLog.title(from: clean))"), trigger: .mention)
         return "Asked \(bot.name). The answer will land in your Inbox."
     }
 
     /// A run with its own new thread (task or mention). Runs in the background; the Agents page
     /// shows it like a chat.
-    private func startJob(bot: BotDefinition, title: String, userText: String, prompt: String, job: Job) {
+    @discardableResult
+    private func startJob(bot: BotDefinition, title: String, userText: String, prompt: String, job: Job,
+                          trigger: RunTrigger, depth: Int = 0) -> Task<RunSummary.Status, Never> {
         let time = now()
-        var thread = AgentThread(bot: bot.id, title: title, created: time)
+        var thread = AgentThread(bot: bot.id, title: title, created: time, trigger: trigger, origin: job.origin)
         thread.messages.append(ThreadMessage(role: .user, at: time, text: userText))
         save(thread, bot: bot)
-        refreshThreads(bot: bot.id)
         let runID = ThreadLog.newID() + ThreadLog.newID()
         runs[runID] = LiveRun(runID: runID, botID: bot.id, threadID: thread.id, origin: job.origin)
-        Task { await run(bot: bot, threadID: thread.id, prompt: prompt, runID: runID, job: job) }
+        refreshThreads(bot: bot.id)
+        return Task { await run(bot: bot, threadID: thread.id, prompt: prompt, runID: runID, job: job, depth: depth) }
+    }
+
+    // MARK: Automatic runs (M7)
+
+    /// Queues an automatic run (morning, an event, or a hand-off). One runs at a time, first in first
+    /// out, under the daily cap; each bot's cost cap applies when it starts.
+    @discardableResult
+    func enqueue(_ item: QueuedRun) -> RunQueue.Admission {
+        let admission = queue.enqueue(item, startedToday: triggerLedger.runsToday, cap: AppSettings.teamSettings.dailyCap)
+        switch admission {
+        case .queued:
+            Log.app.info("Queued \(item.trigger.raw, privacy: .public) run for \(item.bot, privacy: .public)")
+            pumpQueue()
+        case .refused(let reason):
+            if !reason.contains("already") { skip(item, reason: "Daily cap") }
+            Log.app.info("Didn't queue \(item.bot, privacy: .public): \(reason, privacy: .public)")
+        }
+        return admission
+    }
+
+    /// Starts the next queued run when nothing queued is running. Called when one is added or ends:
+    /// events, never a timer.
+    private func pumpQueue() {
+        guard let next = queue.startNext() else { return }
+        func skipAndContinue(_ reason: String) {
+            skip(next, reason: reason)
+            queue.finishActive()
+            pumpQueue()
+        }
+        guard let bot = bot(next.bot) else { return skipAndContinue("Bot missing") }
+        if case .delegate = next.trigger {} else if !AppSettings.teamSettings.automaticRuns {
+            return skipAndContinue("Switched off")
+        }
+        if ledger.refusal(bot: bot.id, name: bot.name, cap: bot.dailyCostUSD) != nil { return skipAndContinue("Cost cap") }
+        guard mcp.helperExists, cliPath != "" else { return skipAndContinue("Not set up") }
+        triggerLedger.countRun()
+        let task = startJob(bot: bot, title: next.title, userText: next.userText, prompt: next.prompt,
+                            job: Job(origin: next.origin, subject: next.subject, unattended: true), trigger: next.trigger,
+                            depth: next.depth)
+        Task { [weak self] in
+            _ = await task.value
+            self?.queue.finishActive()
+            self?.pumpQueue()
+        }
+    }
+
+    private func skip(_ item: QueuedRun, reason: String) {
+        skipped.append(SkippedRun(bot: item.bot, trigger: item.trigger, title: item.title, reason: reason, at: now()))
+        let day = DayStamp(now())
+        skipped.removeAll { DayStamp($0.at) != day }
+    }
+
+    /// The Settings switch went off: drop the waiting morning and event runs (hand-offs the user asked
+    /// for through Chief stay). A run already going finishes.
+    func automaticRunsSwitchedOff() {
+        queue.removeWaiting { if case .delegate = $0.trigger { false } else { true } }
+    }
+
+    /// `atlantis_agent_delegate` from a bot's run: checks the rules and queues the other bot.
+    func delegate(caller: AgentDelegation.Caller, bot target: String, request: String) -> Result<String, ToolFailure> {
+        reloadBotsOnly()
+        let used = caller.runID.flatMap { delegations[$0] } ?? 0
+        let checked = AgentDelegation.check(caller: caller, target: target, request: request, bots: bots,
+                                            delegationsThisRun: used, spentToday: { [ledger] in ledger.spentToday(bot: $0) })
+        let bot: BotDefinition
+        switch checked {
+        case .failure(let failure): return .failure(failure)
+        case .success(let value): bot = value
+        }
+        let from = caller.bot ?? ""
+        let fromName = self.bot(from)?.name ?? from.capitalized
+        let clean = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parentThread = caller.runID.flatMap { runs[$0]?.threadID } ?? "unknown"
+        let item = QueuedRun(bot: bot.id, trigger: .delegate(from: from), title: ThreadLog.title(from: clean),
+                             userText: "\(fromName) asked: \(clean)", prompt: AgentDelegation.prompt(request: clean, fromName: fromName),
+                             origin: AgentDelegation.origin(fromBot: from, threadID: parentThread),
+                             subject: ThreadLog.title(from: clean), depth: caller.depth + 1, parentRunID: caller.runID,
+                             queuedAt: now())
+        switch enqueue(item) {
+        case .queued(let position):
+            if let runID = caller.runID { delegations[runID, default: 0] += 1 }
+            let when = position == 0 ? "It starts now" : "It's queued behind \(position) other run\(position == 1 ? "" : "s")"
+            return .success("Handed to \(bot.name). \(when); its answer goes to the user's Inbox and its own thread. Tell the user you asked \(bot.name).")
+        case .refused(let reason):
+            return .failure(ToolFailure(reason))
+        }
+    }
+
+    struct Handoff: Identifiable, Equatable {
+        var id: String
+        var bot: String
+        var title: String
+        /// nil while it waits in the queue.
+        var threadID: String?
+        var running: Bool
+        var status: RunSummary.Status?
+    }
+
+    /// Runs this thread handed to other bots (Chief → School), queued or done, oldest first.
+    func handoffs(fromBot bot: String, threadID: String) -> [Handoff] {
+        let origin = AgentDelegation.origin(fromBot: bot, threadID: threadID)
+        let started = threads.values.joined().filter { $0.origin == origin }.sorted { $0.created < $1.created }.map { summary in
+            Handoff(id: summary.id, bot: summary.bot, title: summary.title, threadID: summary.id,
+                    running: isRunning(thread: summary.id), status: summary.status)
+        }
+        let waiting = queue.waiting.filter { $0.origin == origin }.map {
+            Handoff(id: $0.id, bot: $0.bot, title: $0.title, threadID: nil, running: false, status: nil)
+        }
+        return started + waiting
+    }
+
+    /// The Team card's runs in progress.
+    var liveForCard: [TeamCard.Live] {
+        runs.values.map { run in
+            TeamCard.Live(threadID: run.threadID, bot: run.botID, waiting: approvals.contains { $0.runID == run.runID })
+        }
+    }
+
+    /// The loaded bots (for the Team card's names and avatars).
+    /// Doesn't read the files (safe in a view's body); `refreshToday` and `start` load them.
+    var definitions: [BotDefinition] { bots.compactMap(\.definition) }
+
+    /// Opens a thread on the Agents page (from Today).
+    func open(thread id: String, bot: String) {
+        start()
+        refreshThreads(bot: bot)
+        selection = .thread(bot: bot, id: id)
     }
 }

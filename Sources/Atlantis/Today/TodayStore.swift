@@ -105,6 +105,13 @@ final class TodayStore {
         }
     }
 
+    /// Adds the evening's shutdown line to today's note (machine block only; PRD F6).
+    func appendShutdown(_ line: String) throws -> DailyNote.ShutdownResult {
+        let result = try DailyNote.appendShutdown(line, vault: vault, now: now())
+        if result == .written { reloadDailyNote() }
+        return result
+    }
+
     /// Writes `plan.json` if today's blocks changed.
     func writePlan(tasks: [TaskItem]) {
         do {

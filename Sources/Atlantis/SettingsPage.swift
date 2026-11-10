@@ -83,6 +83,7 @@ struct SettingsPage: View {
 
             AgentsMCPSection(mcp: model.mcp)
             BotsSettingsSection(mcp: model.mcp)
+            TeamSettingsSection(model: model)
 
             Section("About") {
                 LabeledContent("Version", value: Self.version)

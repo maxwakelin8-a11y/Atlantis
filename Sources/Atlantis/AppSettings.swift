@@ -66,5 +66,20 @@ enum AppSettings {
         set { defaults.set(newValue ?? "", forKey: "claudePath") }
     }
 
+    // MARK: Bots on their own (M7)
+
+    /// "Let bots run on their own" (schedules and events). Off by default.
+    static let automaticRunsKey = "botsRunOnTheirOwn"
+    /// Most automatic runs per day across all bots.
+    static let dailyRunCapKey = "botsDailyRunCap"
+    /// When the morning trigger may run without a sync, in minutes after midnight.
+    static let morningMinuteKey = "botsMorningMinute"
+
+    static var teamSettings: TeamSettings {
+        TeamSettings(automaticRuns: defaults.bool(forKey: automaticRunsKey),
+                     dailyCap: defaults.object(forKey: dailyRunCapKey) as? Int ?? TeamSettings.defaultDailyCap,
+                     morningMinute: defaults.object(forKey: morningMinuteKey) as? Int ?? TeamSettings.defaultMorningMinute)
+    }
+
     private static var home: URL { FileManager.default.homeDirectoryForCurrentUser }
 }

@@ -12,16 +12,19 @@ public struct AgentGrant: Sendable, Equatable {
     public var runID: String
     /// What started the run (`task:<id>`, `doc:<path>`), linked from Inbox items it makes.
     public var origin: String?
+    /// 1 when another bot handed this run over: it can't delegate again (`AgentDelegation`).
+    public var depth: Int
     public var calls: Int = 0
 
     public init(bot: String, tools: Set<String>, maxCalls: Int, autonomy: Autonomy, runID: String = "",
-                origin: String? = nil) {
+                origin: String? = nil, depth: Int = 0) {
         self.bot = bot
         self.tools = tools
         self.maxCalls = maxCalls
         self.autonomy = autonomy
         self.runID = runID
         self.origin = origin
+        self.depth = depth
     }
 }
 
@@ -111,7 +114,9 @@ public struct AgentToolGate: ToolBackend {
                 try await MCPCaller.$autonomy.withValue(grant.autonomy) {
                     try await MCPCaller.$agentRunID.withValue(grant.runID) {
                         try await MCPCaller.$agentOrigin.withValue(grant.origin) {
-                            try await inner.callTool(name: name, arguments: arguments)
+                            try await MCPCaller.$agentDepth.withValue(grant.depth) {
+                                try await inner.callTool(name: name, arguments: arguments)
+                            }
                         }
                     }
                 }

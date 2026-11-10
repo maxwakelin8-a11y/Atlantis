@@ -111,7 +111,16 @@ public enum DailyNote {
         // Block between the markers.
         if let start = lines.firstIndex(where: { bare($0).trimmingCharacters(in: .whitespaces).hasPrefix(startMarker) }),
            let end = lines[(start + 1)...].firstIndex(where: { bare($0).trimmingCharacters(in: .whitespaces).hasPrefix(endMarker) }) {
-            let new = content.block.map { $0 + cr }
+            var block = content.block
+            // The evening's shutdown lines (M7) live in the block too; a later sync keeps them.
+            let old = lines[(start + 1)..<end].map(bare)
+            if !block.contains(shutdownHeading), let heading = old.firstIndex(of: shutdownHeading) {
+                var kept = Array(old[heading...])
+                while kept.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { kept.removeLast() }
+                if block.last.map({ !$0.isEmpty }) ?? false { block.append("") }
+                block += kept
+            }
+            let new = block.map { $0 + cr }
             if Array(lines[(start + 1)..<end]) != new { lines.replaceSubrange((start + 1)..<end, with: new) }
         }
 
@@ -278,6 +287,56 @@ extension DailyNote {
             text = fromTemplate(template, day: DayStamp(now, calendar: calendar), now: now, calendar: calendar)
         }
         return try TextFile.write(apply(content, to: text), to: url) ? .written : .unchanged
+    }
+
+    /// The heading of the evening shutdown lines inside the machine block (PRD F6).
+    public static let shutdownHeading = "### Shutdown"
+
+    public enum ShutdownResult: Equatable, Sendable {
+        case written
+        /// The note has no machine markers (the user removed them), so nothing was written.
+        case noMarkers
+        case noTemplate
+        case noVault
+    }
+
+    /// `text` with `- <line>` added under `### Shutdown` at the end of the machine block (made if
+    /// missing). nil when the note has no markers. Everything outside the markers stays byte for byte.
+    public static func appendingShutdown(_ line: String, to text: String) -> String? {
+        let eol = text.contains("\r\n") ? "\r\n" : "\n"
+        let cr = eol == "\r\n" ? "\r" : ""
+        var lines = text.components(separatedBy: "\n")
+        func bare(_ line: String) -> String { line.hasSuffix("\r") ? String(line.dropLast()) : line }
+        guard let start = lines.firstIndex(where: { bare($0).trimmingCharacters(in: .whitespaces).hasPrefix(startMarker) }),
+              let end = lines[(start + 1)...].firstIndex(where: { bare($0).trimmingCharacters(in: .whitespaces).hasPrefix(endMarker) })
+        else { return nil }
+        var block = lines[(start + 1)..<end].map(bare)
+        while block.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { block.removeLast() }
+        if !block.contains(shutdownHeading) {
+            if !block.isEmpty { block.append("") }
+            block.append(shutdownHeading)
+        }
+        block.append("- " + oneLine(line))
+        lines.replaceSubrange((start + 1)..<end, with: block.map { $0 + cr })
+        return lines.joined(separator: "\n")
+    }
+
+    /// Adds one shutdown line to today's note's machine block (creating the note from the vault's
+    /// template first, as the sync does). Atomic; never touches anything outside the markers.
+    @discardableResult
+    public static func appendShutdown(_ line: String, vault: VaultPaths, now: Date, calendar: Calendar = .current) throws -> ShutdownResult {
+        guard FileManager.default.fileExists(atPath: vault.root.path) else { return .noVault }
+        let url = try vault.writableURL(vault.daily(for: now, calendar: calendar))
+        let text: String
+        if let existing = try TextFile.read(url) {
+            text = existing
+        } else {
+            guard let template = try TextFile.read(vault.root.appendingPathComponent(templatePath)) else { return .noTemplate }
+            text = fromTemplate(template, day: DayStamp(now, calendar: calendar), now: now, calendar: calendar)
+        }
+        guard let updated = appendingShutdown(line, to: text) else { return .noMarkers }
+        try TextFile.write(updated, to: url)
+        return .written
     }
 
     /// Top 3 from today's note, or [] if there's no note.

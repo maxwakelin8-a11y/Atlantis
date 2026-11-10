@@ -127,10 +127,21 @@ final class AppModel {
         if let agentsIfStarted { return agentsIfStarted }
         let offset = clockOffset
         let service = AgentService(mcp: mcp, inbox: { [unowned self] in self.inbox }, tasks: { [unowned self] in self.tasks },
-                                   now: { Date().addingTimeInterval(offset) })
+                                   now: { Date().addingTimeInterval(offset) },
+                                   triggerLedger: triggerLedgerURL.map { url in TriggerLedger(url: url, now: { Date().addingTimeInterval(offset) }) })
         agentsIfStarted = service
         return service
     }
+
+    /// `-debugEndOfDay`: Today opens the End of day sheet once (screenshots).
+    var debugEndOfDay = false
+
+    /// Where automatic-run bookkeeping goes (nil: Application Support). Debug runs use a temp file.
+    @ObservationIgnored var triggerLedgerURL: URL?
+
+    /// Starts bots on their own after a sync and at launch/wake (M7). Cheap: does nothing while
+    /// Settings ▸ Bots ▸ "Let bots run on their own" is off.
+    @ObservationIgnored private(set) lazy var teamTriggers = TeamTriggers(model: self)
 
     /// How long a hidden SEQTA page stays loaded.
     @ObservationIgnored var seqtaUnloadAfter: Duration = .seconds(600)
@@ -153,6 +164,7 @@ final class AppModel {
         today = TodayStore(cache: seqtaCache, vault: VaultPaths(root: AppSettings.vaultURL), planURL: planURL,
                            now: { Date().addingTimeInterval(clockOffset) })
         seqtaSync.onSynced = { [weak self] _ in await self?.didSync() }
+        seqtaSync.onMorningAttempt = { [weak self] in self?.teamTriggers.launchOrWake() }
     }
 
     // MARK: Today wiring
@@ -188,24 +200,30 @@ final class AppModel {
         today.reloadCache()
         seqtaData.reload()
         today.writeDailyNote(syncedAt: seqtaSync.lastSync ?? now())
-        await proposeFromSeqta()
+        let proposals = await proposeFromSeqta()
+        // Bots on their own (M7): new assessments, then the morning trigger.
+        teamTriggers.afterSync(newAssessments: AssessmentJob.newAssessments(proposals: proposals, assessments: today.assessments))
     }
 
-    private func proposeFromSeqta() async {
-        guard FileManager.default.fileExists(atPath: vault.root.path) else { return }
+    /// Posts new homework and assessments to the Inbox; returns what it posted.
+    @discardableResult
+    private func proposeFromSeqta() async -> [InboxItem] {
+        guard FileManager.default.fileExists(atPath: vault.root.path) else { return [] }
         let inbox = self.inbox
         inbox.reload()
         tasks.start()
         tasks.reload()
         let proposals = SeqtaProposals.make(lessons: today.lessons, assessments: today.assessments,
                                             inbox: inbox.items, tasks: tasks.tasks, now: now())
+        var posted: [InboxItem] = []
         for item in proposals {
-            do { try await inbox.post(item) } catch {
+            do { try await inbox.post(item); posted.append(item) } catch {
                 Log.app.error("Couldn't post a SEQTA proposal: \(error.localizedDescription, privacy: .public)")
                 break
             }
         }
         if !proposals.isEmpty { Log.app.info("Posted \(proposals.count) SEQTA proposals to the Inbox") }
+        return posted
     }
 
     private func beginPageSwitch() {

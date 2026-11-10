@@ -33,11 +33,17 @@ private struct BotList: View {
 
     var body: some View {
         List(selection: $service.selection) {
-            ForEach(service.bots) { entry in
+            ForEach(teamFirst) { entry in
                 Section {
                     if let bot = entry.definition {
-                        Label("New chat", systemImage: "square.and.pencil")
-                            .tag(AgentService.Selection.newChat(bot.id))
+                        Group {
+                            if bot.isRouter {
+                                Label("Ask the team", systemImage: "person.3")
+                            } else {
+                                Label("New chat", systemImage: "square.and.pencil")
+                            }
+                        }
+                        .tag(AgentService.Selection.newChat(bot.id))
                         ForEach(service.threads[bot.id] ?? []) { thread in
                             ThreadRow(thread: thread, running: service.isRunning(thread: thread.id))
                                 .tag(AgentService.Selection.thread(bot: bot.id, id: thread.id))
@@ -73,6 +79,18 @@ private struct BotList: View {
             }
         }
     }
+}
+
+extension BotList {
+    /// Chief (the team's router) first: "Ask the team" is the way in for most requests.
+    var teamFirst: [BotEntry] {
+        service.bots.filter { $0.definition?.isRouter == true } + service.bots.filter { $0.definition?.isRouter != true }
+    }
+}
+
+extension BotDefinition {
+    /// A bot that hands work to the others (Chief): it gets "Ask the team".
+    var isRouter: Bool { tools.contains(AgentDelegation.toolName) }
 }
 
 private struct ThreadRow: View {
@@ -191,6 +209,10 @@ private struct Messages: View {
                     } else if service.live == nil {
                         NewChatPrompt(service: service, bot: bot)
                     }
+                    if bot.isRouter, let thread = service.thread {
+                        let handoffs = service.handoffs(fromBot: bot.id, threadID: thread.id)
+                        if !handoffs.isEmpty { HandoffList(handoffs: handoffs, service: service) }
+                    }
                     if let live = service.live {
                         LiveReply(live: live, bot: bot, waiting: !service.approvals(forRun: live.runID).isEmpty)
                         ForEach(service.approvals(forRun: live.runID)) { approval in
@@ -220,15 +242,21 @@ private struct NewChatPrompt: View {
     let bot: BotDefinition
 
     private var suggestions: [String] {
-        bot.tools.contains(where: { $0.hasPrefix("atlantis_school_") })
+        if bot.isRouter { return ["Help me plan for my next assessment", "Find my notes on the French Revolution"] }
+        return bot.tools.contains(where: { $0.hasPrefix("atlantis_school_") })
             ? ["What's due this week?", "What's on tomorrow?", "How are my marks going?"]
             : ["What's on today?", "What's in my Inbox?"]
     }
 
     var body: some View {
         VStack(spacing: Space.m) {
-            EmptyState(title: "Chat with \(bot.name)", systemImage: "bubble.left.and.bubble.right",
-                       message: "\(bot.name) reads your Atlantis data with its own tools. It can't change anything: suggestions land in your Inbox.")
+            if bot.isRouter {
+                EmptyState(title: "Ask the team", systemImage: "person.3",
+                           message: "\(bot.name) passes your request to the bot that fits (School, Coach, Builder or Scout). Their answers land in your Inbox and in their own threads.")
+            } else {
+                EmptyState(title: "Chat with \(bot.name)", systemImage: "bubble.left.and.bubble.right",
+                           message: "\(bot.name) reads your Atlantis data with its own tools. It can't change anything: suggestions land in your Inbox.")
+            }
             HStack(spacing: Space.s) {
                 ForEach(suggestions, id: \.self) { text in
                     Button(text) { service.draft = text }
@@ -428,7 +456,7 @@ private struct Composer: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: Space.s) {
-            TextField("Ask \(bot.name)…", text: $service.draft, axis: .vertical)
+            TextField(bot.isRouter ? "Ask the team…" : "Ask \(bot.name)…", text: $service.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...6)
                 .focused($focused)
@@ -458,5 +486,54 @@ private struct Composer: View {
     private func send() {
         service.send()
         focused = true
+    }
+}
+
+/// Under a Chief thread: the bots it handed work to, and how each is going (M7).
+private struct HandoffList: View {
+    let handoffs: [AgentService.Handoff]
+    let service: AgentService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text("Handed to").font(Typo.caption).foregroundStyle(Palette.textSecondary)
+            ForEach(handoffs) { handoff in
+                let bot = service.bot(handoff.bot)
+                Button {
+                    if let id = handoff.threadID { service.open(thread: id, bot: handoff.bot) }
+                } label: {
+                    HStack(spacing: Space.s) {
+                        Text(bot?.avatar ?? "🤖")
+                        VStack(alignment: .leading, spacing: Space.xxs) {
+                            Text(bot?.name ?? handoff.bot.capitalized).font(Typo.sectionTitle)
+                            Text(handoff.title).font(Typo.secondary).foregroundStyle(Palette.textSecondary).lineLimit(2)
+                        }
+                        Spacer(minLength: Space.s)
+                        status(handoff)
+                    }
+                    .padding(Space.s)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .cardStyle()
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(handoff.threadID == nil)
+                .help(handoff.threadID == nil ? "Waiting its turn" : "Open \(bot?.name ?? handoff.bot)'s thread")
+            }
+        }
+    }
+
+    @ViewBuilder private func status(_ handoff: AgentService.Handoff) -> some View {
+        if handoff.running {
+            ProgressView().controlSize(.small)
+        } else if handoff.threadID == nil {
+            Pill(text: "Waiting")
+        } else if handoff.status == .ok {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.success).help("Done: the answer is in your Inbox")
+        } else if let status = handoff.status {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.warning).help(status.rawValue)
+        } else {
+            ProgressView().controlSize(.small)
+        }
     }
 }

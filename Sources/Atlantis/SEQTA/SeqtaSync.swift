@@ -39,6 +39,9 @@ final class SeqtaSync {
     /// Runs after every sync that wrote the cache: Today reloads, new homework and assessments
     /// go to the Inbox, and the daily note's machine block fills in (wired in `AppModel`).
     @ObservationIgnored var onSynced: @MainActor (SeqtaSyncReport) async -> Void = { _ in }
+    /// Runs after each morning sync attempt from launch or wake, whatever happened (it may have
+    /// synced, been skipped as done today, or failed): the bots' morning trigger (M7).
+    @ObservationIgnored var onMorningAttempt: @MainActor () -> Void = {}
     /// When false, `startAutoSync` does nothing (debug runs on a made-up cache).
     @ObservationIgnored var autoSyncEnabled = true
 
@@ -76,7 +79,10 @@ final class SeqtaSync {
 
     /// The automatic sync: once per local day, the first time the app launches or the Mac wakes.
     func morningSyncIfNeeded() {
-        Task { await refresh(reason: .morning) }
+        Task {
+            await refresh(reason: .morning)
+            onMorningAttempt()
+        }
     }
 
     /// Hooks the morning sync to app launch (now) and to the Mac waking from sleep. Both are

@@ -60,6 +60,9 @@ final class MCPService {
             },
             exportDocument: { html, format, target in
                 try await DocsExport.export(html: html, format: format, to: target)
+            },
+            delegate: { caller, bot, request in
+                await model.agents.delegate(caller: caller, bot: bot, request: request)
             })
         AtlantisTools.register(in: registry, context: context)
     }

@@ -7,6 +7,7 @@ public enum AtlantisTools {
         InboxTools.register(in: registry, context: context)
         SchoolTools.register(in: registry, context: context)
         DocTools.register(in: registry, context: context)
+        AgentTools.register(in: registry, handler: context.delegate)
     }
 
     /// The tool names, for tests and docs.
@@ -16,5 +17,6 @@ public enum AtlantisTools {
         "atlantis_school_timetable", "atlantis_school_assessments", "atlantis_school_subjects",
         "atlantis_school_notices", "atlantis_school_messages", "atlantis_message_draft",
         "atlantis_docs_list", "atlantis_docs_search", "atlantis_doc_read", "atlantis_doc_write", "atlantis_doc_export",
+        AgentDelegation.toolName,
     ]
 }

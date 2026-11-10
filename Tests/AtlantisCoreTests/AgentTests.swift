@@ -81,9 +81,10 @@ private func botFile(_ front: String, body: String = "Be helpful.") -> String {
         #expect(bot.autonomy == .suggest && bot.provider == .claudeCode && bot.allowsChat)
         #expect(bot.maxSteps == 12 && bot.dailyCostUSD == 1.0)
         #expect(bot.soul.hasPrefix("You are School"))
-        // Read-only tools plus posting to the Inbox: nothing that writes, syncs or drafts.
-        #expect(bot.tools.contains("atlantis_inbox_post"))
-        let writes: Set = ["atlantis_task_add", "atlantis_task_update", "atlantis_doc_write", "atlantis_doc_export",
+        // Read-only tools, posting to the Inbox and (M7) proposing tasks for a new assessment's steps;
+        // as a `suggest` bot those are only ever Inbox proposals. Nothing that edits, syncs or drafts.
+        #expect(bot.tools.contains("atlantis_inbox_post") && bot.tools.contains("atlantis_task_add"))
+        let writes: Set = ["atlantis_task_update", "atlantis_doc_write", "atlantis_doc_export",
                            "atlantis_seqta_refresh", "atlantis_message_draft"]
         #expect(Set(bot.tools).isDisjoint(with: writes))
     }
@@ -139,7 +140,7 @@ private func botFile(_ front: String, body: String = "Be helpful.") -> String {
         let root = tempDir("bots")
         defer { try? FileManager.default.removeItem(at: root) }
         let vault = VaultPaths(root: root)
-        #expect(try BotLibrary.ensureDefaults(vault: vault) == ["school", "coach", "builder"])
+        #expect(try BotLibrary.ensureDefaults(vault: vault) == ["school", "coach", "builder", "chief", "scout"])
         let url = vault.agentsDir.appendingPathComponent("school.md")
         try "---\nname: Mine\ntools: [atlantis_today]\n---\nMy own soul.\n".write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.removeItem(at: vault.agentsDir.appendingPathComponent("coach.md"))
@@ -149,11 +150,11 @@ private func botFile(_ front: String, body: String = "Be helpful.") -> String {
 
         try "---\ntools: [nope]\n---\nX\n".write(to: vault.agentsDir.appendingPathComponent("broken.md"), atomically: true, encoding: .utf8)
         let entries = BotLibrary.load(vault: vault)
-        #expect(entries.map(\.id) == ["school", "broken", "builder", "coach"])
+        #expect(entries.map(\.id) == ["school", "broken", "builder", "chief", "coach", "scout"])
         #expect(entries[0].definition?.name == "Mine")
         #expect(entries[1].definition == nil && entries[1].problems.first?.contains("nope") == true)
         #expect(entries[2].definition?.allowsMention == true && entries[2].definition?.allowsTask == false)
-        #expect(entries[3].definition?.allowsTask == true && entries[3].definition?.autonomy == .suggest)
+        #expect(entries[4].definition?.allowsTask == true && entries[4].definition?.autonomy == .suggest)
     }
 
     @Test func noVaultNoDefaults() throws {

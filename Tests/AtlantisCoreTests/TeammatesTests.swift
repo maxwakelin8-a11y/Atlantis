@@ -174,6 +174,7 @@ private func tempDir(_ name: String) -> URL {
         async let accepted = center.wait(for: approval("i-1"))
         async let dismissed = center.wait(for: approval("i-2"))
         await settle(center, count: 2)
+        for _ in 0..<200 where seen.value.count != 2 { try? await Task.sleep(for: .milliseconds(5)) } // onChange can trail
         #expect(Set(seen.value) == ["i-1", "i-2"])
         center.inboxDecided(["i-1": .accepted, "i-2": .pending])
         center.inboxDecided(["i-2": .dismissed])
