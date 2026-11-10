@@ -33,6 +33,8 @@ enum Size {
     static let sidePanel: CGFloat = 300
     /// The Agents page's list of bots and threads.
     static let threadList: CGFloat = 250
+    /// The Whiteboard page's list of boards.
+    static let boardList: CGFloat = 220
     /// Today's right-hand column (Next up, tasks, Top 3).
     static let todaySide: CGFloat = 340
     /// Time column on a timeline ("08:55").

@@ -230,9 +230,14 @@ ClickUp-style agents as teammates, built natively into Atlantis. Replaces OpenMa
 - **Browser panel per thread/task/doc** (WKWebView, not Chromium). Each context keeps its own
   cookies, hidden panels are snapshotted and unloaded, and bots can drive it. It has no Swift
   bridge (untrusted content). Logged-in or long browsing is handed off to Yab.
-- **Whiteboard:** native Swift (`Canvas`), Excalidraw-style. Reads and writes `.excalidraw`
-  files in `~/Documents/Docs`, can be embedded in docs as a saved SVG preview, and can be
-  linked to tasks.
+- **Whiteboard (built early, 2026-11-11; changed from "native Swift"):** the real Excalidraw
+  (MIT, `@excalidraw/excalidraw`, `web/whiteboard`) in a web view with no network, fonts bundled.
+  Boards are plain `.excalidraw` files in iCloud Drive/Whiteboards (sub-folders allowed), so they
+  also open in excalidraw.com and Obsidian. The board list is native; the page never names files
+  (Swift hands it the open board and checks every save, refusing one if the file changed since,
+  then the page merges and saves again). Agents (T3 Code, bots) read and draw on boards through
+  the MCP tools in §8: they only add, never move or delete. Later: embed a board in a doc as an
+  SVG preview, link boards to tasks, Mermaid → board.
 - **Sheets** (`.xlsx`, GenOffice/Univer) and **Slides** (`.pptx`, GenOffice), with AI stripped.
 
 ### 7d. SEQTA inside Atlantis (phase-out of the SEQTA tab)
@@ -302,6 +307,10 @@ moves to where it belongs, and your AI can read all of it.
 | `atlantis_doc_read` | read | A doc's markdown |
 | `atlantis_doc_write` | write* | Create a doc, or propose edits (shown as a diff to accept in the editor) |
 | `atlantis_doc_export` | action | Export to PDF or .docx |
+| `atlantis_whiteboards_list` | read | Boards in the Whiteboards folder |
+| `atlantis_whiteboard_read` | read | A board's shapes, text, arrows (with what they connect) and bounds, or its raw JSON |
+| `atlantis_whiteboard_draw` | write* | Add shapes, text and arrows (creating the board if needed); never moves or deletes |
+| `atlantis_whiteboard_open` | action | Show a board on the Whiteboard page |
 
 These replace seqta-mcp's `docs_*` tools once they work.
 
@@ -414,7 +423,7 @@ and there's an entry in `docs/log.md`.
 | # | Milestone | Done when |
 |---|---|---|
 | M10 | Browser panel | A browser on threads, tasks and docs; bots can read and drive it; Yab handoff |
-| M11 | Whiteboard | Native board with shapes, arrows, freehand and text, undo, zoom; `.excalidraw` files; embeds in Docs |
+| M11 | Whiteboard | **Built 2026-11-11 (ahead of order, user's ask):** Excalidraw in a web view, `.excalidraw` files, agents draw via MCP. Left: embeds in Docs |
 | M12 | Sheets | GenOffice Sheets (`.xlsx`) in the app, with AI stripped |
 | M13 | Slides | GenOffice Slides (`.pptx`) in the app, with AI stripped |
 
@@ -455,7 +464,9 @@ the SEQTA web UI is now a goal, §7d; you can send messages yourself.)
 2. ~~AI provider?~~ Decided 2026-11-04: Claude via the subscription (Claude Code headless), Opus-lead + cheap-worker "fusion" mode, and a cheap API fallback that never sees SEQTA data (§7b).
 3. Should the repo be new (`~/Developer/atlantis`) or a rename of seqta-app? (Default: new repo, copying the SEQTA code in.)
 4. Which modes, working hours and no-go times should the scheduler use (training nights, etc.)?
-5. ~~Whiteboard: when, and Swift or Rust?~~ Decided 2026-11-03: native Swift, built at M11 (§7c).
+5. ~~Whiteboard: when, and Swift or Rust?~~ Decided 2026-11-03: native Swift, built at M11. Changed
+   2026-11-11: the real Excalidraw in a web view, built now, so the user gets Excalidraw itself and
+   AI tools can draw on it (§7c).
 6. Which projects are "openbot" and "Grok bot", so their ideas can be folded into §7b?
 
 ## 17. Performance, resources and security

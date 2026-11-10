@@ -46,6 +46,17 @@ enum AppSettings {
         set { defaults.set(newValue.path, forKey: "writerPath") }
     }
 
+    /// The Whiteboards folder: `.excalidraw` boards, optionally in sub-folders. Default: iCloud Drive/Whiteboards.
+    static var whiteboardsURL: URL {
+        get {
+            if let path = defaults.string(forKey: "whiteboardsPath"), !path.isEmpty {
+                return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+            }
+            return home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/Whiteboards", isDirectory: true)
+        }
+        set { defaults.set(newValue.path, forKey: "whiteboardsPath") }
+    }
+
     /// The name Docs puts on title pages when exporting.
     static var authorName: String {
         get { defaults.string(forKey: "authorName") ?? "" }

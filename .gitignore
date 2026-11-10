@@ -6,3 +6,4 @@ build/
 node_modules/
 Resources/DocsEditor/
 web/docs-editor/meta.json
+Resources/Whiteboard/

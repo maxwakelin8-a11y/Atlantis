@@ -63,6 +63,13 @@ final class MCPService {
             },
             delegate: { caller, bot, request in
                 await model.agents.delegate(caller: caller, bot: bot, request: request)
+            },
+            whiteboardRoot: { AppSettings.whiteboardsURL },
+            boardChanged: { path in
+                await model.whiteboardIfStarted?.boardChanged(path)
+            },
+            openBoard: { path in
+                await model.openBoard(path)
             })
         AtlantisTools.register(in: registry, context: context)
     }

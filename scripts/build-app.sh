@@ -21,6 +21,12 @@ if [[ ! -f Resources/DocsEditor/editor.js ]] || [[ -n "$(find $EDITOR/src $EDITO
   (cd $EDITOR && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npm run build --silent)
 fi
 
+# Whiteboard bundle (web/whiteboard → Resources/Whiteboard), rebuilt when its sources change.
+BOARD=web/whiteboard
+if [[ ! -f Resources/Whiteboard/board.js ]] || [[ -n "$(find $BOARD/src $BOARD/build.mjs $BOARD/package-lock.json -newer Resources/Whiteboard/board.js 2>/dev/null | head -1)" ]]; then
+  (cd $BOARD && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npm run build --silent)
+fi
+
 # One product per call: swift build only keeps the last --product flag.
 for product in Atlantis atlantis-mcp atlantis-agentd; do
   swift build -c $CONFIG --product $product
@@ -35,6 +41,7 @@ cp ".build/$CONFIG/atlantis-mcp" "$APP/Contents/MacOS/atlantis-mcp"
 cp ".build/$CONFIG/atlantis-agentd" "$APP/Contents/MacOS/atlantis-agentd"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp -R Resources/DocsEditor "$APP/Contents/Resources/DocsEditor"
+cp -R Resources/Whiteboard "$APP/Contents/Resources/Whiteboard"
 
 # Ad-hoc signed with the hardened runtime (PRD §17).
 codesign --force --options runtime --sign - "$APP/Contents/MacOS/atlantis-mcp"

@@ -178,3 +178,25 @@
   byte-identical. Not tried by hand in the app: a second copy would share the MCP socket with
   the user's running app. Branch `docs/history-record`.
 - Next: user tries it (quit and reopen Atlantis); PR after they're happy.
+
+## 2026-11-11: Whiteboard (Excalidraw) + AI drawing over MCP
+- User asked for a whiteboard using Excalidraw itself, usable by their AI in T3 Code. Looked at
+  Excalidraw's "CLI" and MCP: there's no official CLI (only community ones), and the official MCP
+  draws in a chat widget, not into files on this Mac. So Atlantis's own MCP gets the board tools.
+- Built: `web/whiteboard` (Excalidraw 0.18.1, MIT; esbuild ESM bundle, fonts copied in, no
+  network), Whiteboard page (native board list + canvas; new/rename/move to Bin/show in Finder),
+  boards as `.excalidraw` files in iCloud Drive/Whiteboards. Saves are checked against the file's
+  hash; on a conflict the page merges (Excalidraw's `reconcileElements`) and saves again.
+- MCP: `atlantis_whiteboards_list`, `atlantis_whiteboard_read`, `atlantis_whiteboard_draw`
+  (gated: Settings allow list "Draw on whiteboards", else an Inbox `whiteboard.draw` proposal),
+  `atlantis_whiteboard_open`. Swift builds real elements (bound labels, arrows bound to shapes);
+  the page measures their text in Excalifont on open and saves.
+- Registered the `atlantis` MCP server in Claude Code (user scope) so T3 Code chats can use it.
+- Committed the pending Docs history/record work on `docs/history-record`; whiteboard is on
+  `m11/whiteboard` on top of it.
+- Checked live in a test copy (own socket, scratch folder): drew a diagram over MCP, opened it,
+  drew more while open; the page laid out and merged both. Tests: 404 Swift, 9 whiteboard web,
+  95 Docs web pass. Found and fixed: StrictMode stale API, rAF paused in covered windows,
+  `read` refusing names without `.excalidraw`.
+- Next: user installs the new build (quit Atlantis, `scripts/build-app.sh --install`), turns on
+  "Draw on whiteboards" in Settings if they want AI drawing without approval, and tries it.

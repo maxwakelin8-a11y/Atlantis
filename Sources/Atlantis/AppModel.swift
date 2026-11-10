@@ -86,6 +86,23 @@ final class AppModel {
         return controller
     }
 
+    /// Created the first time Whiteboard is shown or an agent touches a board. Its web view
+    /// lives only while the page shows.
+    private(set) var whiteboardIfStarted: WhiteboardController?
+
+    var whiteboard: WhiteboardController {
+        if let whiteboardIfStarted { return whiteboardIfStarted }
+        let controller = WhiteboardController()
+        whiteboardIfStarted = controller
+        return controller
+    }
+
+    /// Opens a board on the Whiteboard page (agents: `atlantis_whiteboard_open`).
+    func openBoard(_ path: String) async {
+        page = .whiteboard
+        await whiteboard.open(path)
+    }
+
     /// Created the first time Tasks is shown (or anything else needs tasks); then it watches
     /// `machine/tasks.md` for edits made elsewhere.
     private(set) var tasksIfStarted: TaskStore?
@@ -107,7 +124,11 @@ final class AppModel {
         // Accepting a task or doc proposal applies it (see InboxActions in AtlantisCore).
         store.onAccept = { [weak self] item in
             guard let self else { return }
-            try InboxActions(tasks: self.tasks, writerRoot: { AppSettings.writerURL }).apply(item)
+            try InboxActions(tasks: self.tasks, writerRoot: { AppSettings.writerURL },
+                             whiteboardRoot: { AppSettings.whiteboardsURL },
+                             boardChanged: { [weak self] path in
+                                 Task { await self?.whiteboardIfStarted?.boardChanged(path) }
+                             }).apply(item)
         }
         // A bot run waiting on approval (ask autonomy) hears when its item is decided.
         let approvals = mcp.approvals

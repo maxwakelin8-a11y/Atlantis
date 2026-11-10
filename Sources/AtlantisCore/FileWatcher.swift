@@ -9,9 +9,10 @@ import Foundation
 /// and deletes, which a plain file descriptor watch loses after the first replace.
 public final class FileWatcher: @unchecked Sendable {
     private final class Box {
-        let fileName: String
+        /// nil: any file in the folder (or below it).
+        let fileName: String?
         let handler: @Sendable () -> Void
-        init(fileName: String, handler: @escaping @Sendable () -> Void) {
+        init(fileName: String?, handler: @escaping @Sendable () -> Void) {
             self.fileName = fileName
             self.handler = handler
         }
@@ -22,7 +23,16 @@ public final class FileWatcher: @unchecked Sendable {
     private let queue = DispatchQueue(label: "au.lifeos.atlantis.filewatcher", qos: .utility)
 
     /// `folder` should exist. `latency` is the debounce in seconds.
-    public init?(folder: URL, fileName: String, latency: TimeInterval = 0.2, onChange: @escaping @Sendable () -> Void) {
+    public convenience init?(folder: URL, fileName: String, latency: TimeInterval = 0.2, onChange: @escaping @Sendable () -> Void) {
+        self.init(folder: folder, match: fileName, latency: latency, onChange: onChange)
+    }
+
+    /// Any change to any file in `folder` or its sub-folders.
+    public convenience init?(folder: URL, anyFile: Bool, latency: TimeInterval = 0.3, onChange: @escaping @Sendable () -> Void) {
+        self.init(folder: folder, match: nil, latency: latency, onChange: onChange)
+    }
+
+    private init?(folder: URL, match fileName: String?, latency: TimeInterval, onChange: @escaping @Sendable () -> Void) {
         let box = Unmanaged.passRetained(Box(fileName: fileName, handler: onChange))
         self.box = box
         var context = FSEventStreamContext(version: 0, info: box.toOpaque(), retain: nil, release: nil, copyDescription: nil)
@@ -30,7 +40,7 @@ public final class FileWatcher: @unchecked Sendable {
             guard let info else { return }
             let box = Unmanaged<Box>.fromOpaque(info).takeUnretainedValue()
             let list = unsafeBitCast(paths, to: NSArray.self) as? [String] ?? []
-            if list.prefix(count).contains(where: { ($0 as NSString).lastPathComponent == box.fileName }) { box.handler() }
+            if list.prefix(count).contains(where: { box.fileName == nil || ($0 as NSString).lastPathComponent == box.fileName }) { box.handler() }
         }
         let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
         guard let stream = FSEventStreamCreate(nil, callback, &context, [folder.path] as CFArray,

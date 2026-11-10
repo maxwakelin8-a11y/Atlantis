@@ -8,7 +8,8 @@ what your task needs.
 Atlantis is the user's **main Mac app**. Coding happens in T3 Code; everything else happens here:
 - **Planner:** Today screen, tasks, SEQTA (school LMS), an agent Inbox and an MCP server.
 - **Mini office suite:** **Docs** first (plain `.md` files), then Sheets (`.xlsx`) and Slides
-  (`.pptx`) later. A whiteboard is proposed. Built from a copied snapshot of GenOffice (Apache-2.0).
+  (`.pptx`) later, plus a **Whiteboard** (Excalidraw, `.excalidraw` files). Docs/Sheets/Slides come
+  from a copied snapshot of GenOffice (Apache-2.0).
 
 It's personal software for one user, a Year 9 student in Australia. There are no accounts, no
 cloud backend and no other users.
@@ -25,6 +26,9 @@ cloud backend and no other users.
 - Phase 2 built (2026-11-10): + #14 M5 agent runtime (`atlantis-agentd`, School), #15 M6 bots as
   teammates (assign, @mention, autonomy), #16 M7 triggers, Chief/Scout, Today Team card, End of Day.
   `p1/integration` merges everything (389 Swift + 76 web tests).
+- Whiteboard built early (2026-11-11, user's ask): Excalidraw 0.18.1 in `web/whiteboard`, boards in
+  iCloud Drive/Whiteboards, MCP tools `atlantis_whiteboard*` so T3 Code can draw. Branch
+  `m11/whiteboard`, stacked on `docs/history-record`.
 - **Now: fixing phase.** Work through `docs/issues.md` slowly, starting with what the user finds
   in the real app. Phase 3 (M8 Docs+, M9 rituals + design pass) waits until then.
 - Not live-tested yet: SEQTA sync against real SEQTA (needs the user signed in).
@@ -53,6 +57,7 @@ Update this section whenever a milestone starts or finishes.
   - Docs → Writer projects in `~/Library/Mobile Documents/com~apple~CloudDocs/Writer` (PRD §7a)
   - Tasks → LifeOS vault `machine/tasks.md` (format in PRD §9)
   - Inbox → LifeOS vault `machine/atlantis/inbox.md`
+  - Whiteboards → `.excalidraw` files in `~/Library/Mobile Documents/com~apple~CloudDocs/Whiteboards`
   - Daily notes → LifeOS `daily/`. Write **only** the machine-owned parts (see the vault's AGENTS.md)
 - LifeOS vault path: `~/Library/Mobile Documents/com~apple~CloudDocs/LifeOS`. Never write to
   its `human/` folder.
@@ -80,7 +85,8 @@ Update this section whenever a milestone starts or finishes.
   one warm Docs editor. Budgets are in PRD §17.
 - **Narrow bridge:** the Docs page only gets the `WriterFiles` operations (text files inside the
   Writer folder) plus export/import/open; never widen it to other folders. Check paths in
-  Swift. Browser panels get no bridge.
+  Swift. The Whiteboard page gets only "save the open board" (Swift picks the board, the page never
+  names a file). Browser panels get no bridge.
 - **Make every web view through `WebViews`** (`Sources/Atlantis/WebViews.swift`) with
   `network: .none` unless it truly needs the web. Only the temporary SEQTA tab uses `.open`.
 - **MCP and agent sockets are Unix sockets with `0600` permissions and a peer-UID check, never TCP.**
