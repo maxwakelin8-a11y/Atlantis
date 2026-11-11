@@ -22,7 +22,7 @@ final class SeqtaTab: NSObject, WKWebExtensionTab {
 /// Nothing is created until the SEQTA page is first opened. After that the web view stays
 /// alive so switching pages is instant and you stay logged in.
 @MainActor @Observable
-final class SeqtaController: NSObject, WKWebExtensionWindow, WKNavigationDelegate, WKUIDelegate {
+final class SeqtaController: NSObject, WKWebExtensionWindow, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     enum Phase: Equatable { case idle, starting, ready }
 
     private(set) var phase: Phase = .idle
@@ -200,21 +200,44 @@ final class SeqtaController: NSObject, WKWebExtensionWindow, WKNavigationDelegat
             return nil
         }
         // Login or SEQTA pop-ups: a small window that shares the session.
-        let popup = WKWebView(frame: .zero, configuration: configuration)
+        return makePopup(configuration: configuration,
+                         width: windowFeatures.width?.doubleValue ?? 900,
+                         height: windowFeatures.height?.doubleValue ?? 700)
+    }
+
+    /// "Open in SEQTA": shows a SEQTA page in the same kind of pop-up window, with the same
+    /// session (and BetterSEQTA+, once the SEQTA tab has loaded it). Used by Subjects and Messages
+    /// for anything that doesn't have a native page yet (PRD §7d).
+    func openInPopup(_ url: URL) {
+        guard url.scheme == "http" || url.scheme == "https", SeqtaLinks.opensInApp(url, seqtaHost: AppSettings.seqtaURL?.host) else {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        makePopup(configuration: webView.configuration, width: 1100, height: 780).load(URLRequest(url: url))
+    }
+
+    private func makePopup(configuration: WKWebViewConfiguration, width: Double, height: Double) -> WKWebView {
+        let popup = WebViews.make(configuration)
         popup.uiDelegate = self
         popup.navigationDelegate = self
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0,
-                                width: windowFeatures.width?.doubleValue ?? 900,
-                                height: windowFeatures.height?.doubleValue ?? 700),
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered, defer: false)
         window.contentView = popup
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.center()
         window.makeKeyAndOrderFront(nil)
         popups.append(window)
         return popup
+    }
+
+    /// A pop-up closed with its close button: drop it (and its page) instead of keeping it around.
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        popups.removeAll { $0 === window }
+        if let popup = window.contentView as? WKWebView { popup.load(URLRequest(url: URL(string: "about:blank")!)) }
     }
 
     func webViewDidClose(_ webView: WKWebView) {

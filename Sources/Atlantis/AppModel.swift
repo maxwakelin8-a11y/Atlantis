@@ -28,15 +28,141 @@ final class AppModel {
     /// Created the first time the SEQTA page is shown, so launch stays fast and idle.
     private(set) var seqtaIfStarted: SeqtaController?
 
+    /// The SEQTA sync engine (PRD §7d). Cheap until a sync runs: it only reads `meta.json`.
+    let seqtaSync: SeqtaSync
+
+    /// Today's SEQTA data, Top 3 and plan (PRD F1).
+    let today: TodayStore
+
+    /// The clock pages use. Real time, shifted by `-debugNow` for screenshots.
+    @ObservationIgnored let clockOffset: TimeInterval
+    func now() -> Date { Date().addingTimeInterval(clockOffset) }
+
+    private var vault: VaultPaths { VaultPaths(root: AppSettings.vaultURL) }
+
+    /// The SEQTA cache as the Subjects and Messages pages read it.
+    let seqtaData: SeqtaData
+
+    /// The subject whose page shows under Subjects (nil: the overview of all subjects).
+    var subjectCode: String?
+
+    /// Created the first time Messages is shown or something opens a draft in it.
+    @ObservationIgnored private var messagesStorage: MessagesModel?
+
+    var messages: MessagesModel {
+        if let messagesStorage { return messagesStorage }
+        let model = MessagesModel(sync: seqtaSync, data: seqtaData)
+        model.onDraftSent = { [weak self] inboxID in
+            guard let self, let inboxID else { return }
+            Task { try? await self.inbox.accept(id: inboxID) }
+        }
+        messagesStorage = model
+        return model
+    }
+
+    /// Opens an agent's `message.draft` in the Messages compose view. It still needs Send + confirm.
+    func openDraftInMessages(_ item: InboxItem) {
+        messages.startCompose(MessageDraft(inbox: item), inboxItemID: item.id)
+        page = .messages
+    }
+
+    /// Shows a SEQTA page in the pop-up window ("Open in SEQTA").
+    func openInSeqta(_ url: URL?) {
+        guard let url else { return }
+        seqta.openInPopup(url)
+    }
+
+    /// The SEQTA address's page for `make`, for the buttons that open SEQTA.
+    func seqtaPage(_ make: (URL) -> URL?) -> URL? { AppSettings.seqtaURL.flatMap(make) }
+
     /// Created the first time Docs is shown, then kept warm (the one warm Docs editor, PRD §17).
     private(set) var docsIfStarted: DocsController?
 
     var docs: DocsController {
         if let docsIfStarted { return docsIfStarted }
         let controller = DocsController()
+        controller.agents = { [unowned self] in self.agents }
         docsIfStarted = controller
         return controller
     }
+
+    /// Created the first time Whiteboard is shown or an agent touches a board. Its web view
+    /// lives only while the page shows.
+    private(set) var whiteboardIfStarted: WhiteboardController?
+
+    var whiteboard: WhiteboardController {
+        if let whiteboardIfStarted { return whiteboardIfStarted }
+        let controller = WhiteboardController()
+        whiteboardIfStarted = controller
+        return controller
+    }
+
+    /// Opens a board on the Whiteboard page (agents: `atlantis_whiteboard_open`).
+    func openBoard(_ path: String) async {
+        page = .whiteboard
+        await whiteboard.open(path)
+    }
+
+    /// Created the first time Tasks is shown (or anything else needs tasks); then it watches
+    /// `machine/tasks.md` for edits made elsewhere.
+    private(set) var tasksIfStarted: TaskStore?
+
+    var tasks: TaskStore {
+        if let tasksIfStarted { return tasksIfStarted }
+        let offset = clockOffset
+        let store = TaskStore(vault: vault, now: { Date().addingTimeInterval(offset) })
+        tasksIfStarted = store
+        return store
+    }
+
+    @ObservationIgnored private var inboxStorage: InboxStore?
+
+    /// Created the first time it's needed (the sidebar badge or the Inbox page), then kept.
+    var inbox: InboxStore {
+        if let inboxStorage { return inboxStorage }
+        let store = InboxStore(vault: vault)
+        // Accepting a task or doc proposal applies it (see InboxActions in AtlantisCore).
+        store.onAccept = { [weak self] item in
+            guard let self else { return }
+            try InboxActions(tasks: self.tasks, writerRoot: { AppSettings.writerURL },
+                             whiteboardRoot: { AppSettings.whiteboardsURL },
+                             boardChanged: { [weak self] path in
+                                 Task { await self?.whiteboardIfStarted?.boardChanged(path) }
+                             }).apply(item)
+        }
+        // A bot run waiting on approval (ask autonomy) hears when its item is decided.
+        let approvals = mcp.approvals
+        store.onStates = { states in approvals.inboxDecided(states) }
+        store.start()
+        inboxStorage = store
+        return store
+    }
+
+    /// The local MCP server agents talk to (PRD §8). Started at launch, stopped at quit.
+    let mcp = MCPService()
+
+    /// Created the first time the Agents page is shown (PRD §7b). Nothing runs until a chat starts.
+    private(set) var agentsIfStarted: AgentService?
+
+    var agents: AgentService {
+        if let agentsIfStarted { return agentsIfStarted }
+        let offset = clockOffset
+        let service = AgentService(mcp: mcp, inbox: { [unowned self] in self.inbox }, tasks: { [unowned self] in self.tasks },
+                                   now: { Date().addingTimeInterval(offset) },
+                                   triggerLedger: triggerLedgerURL.map { url in TriggerLedger(url: url, now: { Date().addingTimeInterval(offset) }) })
+        agentsIfStarted = service
+        return service
+    }
+
+    /// `-debugEndOfDay`: Today opens the End of day sheet once (screenshots).
+    var debugEndOfDay = false
+
+    /// Where automatic-run bookkeeping goes (nil: Application Support). Debug runs use a temp file.
+    @ObservationIgnored var triggerLedgerURL: URL?
+
+    /// Starts bots on their own after a sync and at launch/wake (M7). Cheap: does nothing while
+    /// Settings ▸ Bots ▸ "Let bots run on their own" is off.
+    @ObservationIgnored private(set) lazy var teamTriggers = TeamTriggers(model: self)
 
     /// How long a hidden SEQTA page stays loaded.
     @ObservationIgnored var seqtaUnloadAfter: Duration = .seconds(600)
@@ -49,9 +175,76 @@ final class AppModel {
         return controller
     }
 
-    init(page: Page? = nil) {
+    init(page: Page? = nil, seqtaCache: SeqtaCache = SeqtaCache(), planURL: URL = PlanFile.defaultURL,
+         clockOffset: TimeInterval = 0) {
         let saved = UserDefaults.standard.string(forKey: Self.lastPageKey).flatMap(Page.init(rawValue:))
         self.page = page ?? saved ?? .today
+        self.clockOffset = clockOffset
+        seqtaSync = SeqtaSync(cache: seqtaCache)
+        seqtaData = SeqtaData(cache: seqtaCache)
+        today = TodayStore(cache: seqtaCache, vault: VaultPaths(root: AppSettings.vaultURL), planURL: planURL,
+                           now: { Date().addingTimeInterval(clockOffset) })
+        seqtaSync.onSynced = { [weak self] _ in await self?.didSync() }
+        seqtaSync.onMorningAttempt = { [weak self] in self?.teamTriggers.launchOrWake() }
+    }
+
+    // MARK: Today wiring
+
+    /// Starts Today's stores and keeps `plan.json` current. Called once, after the first frame.
+    func startToday() {
+        today.start()
+        tasks.start()
+        writePlanAndObserve()
+    }
+
+    /// Writes the plan now and again whenever tasks or the cache change (observation, no timers).
+    private func writePlanAndObserve() {
+        withObservationTracking {
+            today.writePlan(tasks: tasks.tasks)
+            _ = tasks.revision
+            _ = today.revision
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.writePlanAndObserve() }
+        }
+    }
+
+    /// After a sync wrote the cache: reload Today, fill the daily note, propose new homework and
+    /// assessments in the Inbox (PRD F3: never added silently).
+    /// Debug (`-debugAfterSync YES`): runs the after-sync work on the cache as it is, with no
+    /// network, then prints what it did.
+    func debugRunAfterSync() async {
+        startToday()
+        await didSync()
+    }
+
+    private func didSync() async {
+        today.reloadCache()
+        seqtaData.reload()
+        today.writeDailyNote(syncedAt: seqtaSync.lastSync ?? now())
+        let proposals = await proposeFromSeqta()
+        // Bots on their own (M7): new assessments, then the morning trigger.
+        teamTriggers.afterSync(newAssessments: AssessmentJob.newAssessments(proposals: proposals, assessments: today.assessments))
+    }
+
+    /// Posts new homework and assessments to the Inbox; returns what it posted.
+    @discardableResult
+    private func proposeFromSeqta() async -> [InboxItem] {
+        guard FileManager.default.fileExists(atPath: vault.root.path) else { return [] }
+        let inbox = self.inbox
+        inbox.reload()
+        tasks.start()
+        tasks.reload()
+        let proposals = SeqtaProposals.make(lessons: today.lessons, assessments: today.assessments,
+                                            inbox: inbox.items, tasks: tasks.tasks, now: now())
+        var posted: [InboxItem] = []
+        for item in proposals {
+            do { try await inbox.post(item); posted.append(item) } catch {
+                Log.app.error("Couldn't post a SEQTA proposal: \(error.localizedDescription, privacy: .public)")
+                break
+            }
+        }
+        if !proposals.isEmpty { Log.app.info("Posted \(proposals.count) SEQTA proposals to the Inbox") }
+        return posted
     }
 
     private func beginPageSwitch() {

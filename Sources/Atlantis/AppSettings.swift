@@ -15,6 +15,14 @@ enum AppSettings {
         set { defaults.set(newValue?.absoluteString, forKey: "seqtaURL") }
     }
 
+    /// Whether the temporary SEQTA web tab shows in the sidebar (PRD §7d). On until Today, Tasks,
+    /// Subjects and Messages cover a school day. Views read it with `@AppStorage(AppSettings.showSeqtaTabKey)`.
+    static let showSeqtaTabKey = "showSeqtaTab"
+    static var showSeqtaTab: Bool {
+        get { defaults.object(forKey: showSeqtaTabKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: showSeqtaTabKey) }
+    }
+
     /// The built BetterSEQTA+ extension (the fork's `npm run build:safari` output).
     static var extensionURL: URL {
         get {
@@ -38,6 +46,17 @@ enum AppSettings {
         set { defaults.set(newValue.path, forKey: "writerPath") }
     }
 
+    /// The Whiteboards folder: `.excalidraw` boards, optionally in sub-folders. Default: iCloud Drive/Whiteboards.
+    static var whiteboardsURL: URL {
+        get {
+            if let path = defaults.string(forKey: "whiteboardsPath"), !path.isEmpty {
+                return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+            }
+            return home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/Whiteboards", isDirectory: true)
+        }
+        set { defaults.set(newValue.path, forKey: "whiteboardsPath") }
+    }
+
     /// The name Docs puts on title pages when exporting.
     static var authorName: String {
         get { defaults.string(forKey: "authorName") ?? "" }
@@ -50,6 +69,27 @@ enum AppSettings {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
         }
         return home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/LifeOS", isDirectory: true)
+    }
+
+    /// The Claude Code CLI bots run on (Settings ▸ Bots). Empty: look in the usual places.
+    static var claudePath: String? {
+        get { defaults.string(forKey: "claudePath").flatMap { $0.isEmpty ? nil : $0 } }
+        set { defaults.set(newValue ?? "", forKey: "claudePath") }
+    }
+
+    // MARK: Bots on their own (M7)
+
+    /// "Let bots run on their own" (schedules and events). Off by default.
+    static let automaticRunsKey = "botsRunOnTheirOwn"
+    /// Most automatic runs per day across all bots.
+    static let dailyRunCapKey = "botsDailyRunCap"
+    /// When the morning trigger may run without a sync, in minutes after midnight.
+    static let morningMinuteKey = "botsMorningMinute"
+
+    static var teamSettings: TeamSettings {
+        TeamSettings(automaticRuns: defaults.bool(forKey: automaticRunsKey),
+                     dailyCap: defaults.object(forKey: dailyRunCapKey) as? Int ?? TeamSettings.defaultDailyCap,
+                     morningMinute: defaults.object(forKey: morningMinuteKey) as? Int ?? TeamSettings.defaultMorningMinute)
     }
 
     private static var home: URL { FileManager.default.homeDirectoryForCurrentUser }

@@ -19,6 +19,13 @@ let testingLinkerFlags: [LinkerSetting] = needsCLTTesting
 let package = Package(
     name: "Atlantis",
     platforms: [.macOS("15.4")],
+    products: [
+        .executable(name: "Atlantis", targets: ["Atlantis"]),
+        // The MCP stdio helper bundled in Atlantis.app (Contents/MacOS). Forwards to the app's socket.
+        .executable(name: "atlantis-mcp", targets: ["AtlantisMCP"]),
+        // Runs the bots (PRD §7b): the app starts it on demand; it exits when idle.
+        .executable(name: "atlantis-agentd", targets: ["AtlantisAgentd"]),
+    ],
     targets: [
         // Logic with no UI, so it can be tested on its own.
         .target(name: "AtlantisCore", path: "Sources/AtlantisCore"),
@@ -28,12 +35,23 @@ let package = Package(
             path: "Sources/Atlantis",
             linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("SwiftUI")]
         ),
+        .executableTarget(
+            name: "AtlantisMCP",
+            dependencies: ["AtlantisCore"],
+            path: "Sources/AtlantisMCP"
+        ),
+        .executableTarget(
+            name: "AtlantisAgentd",
+            dependencies: ["AtlantisCore"],
+            path: "Sources/AtlantisAgentd"
+        ),
         // Tests are an executable, not a .testTarget: with only the Command Line Tools,
         // `swift test` builds Swift Testing suites but never runs them. Run scripts/test.sh.
         .executableTarget(
             name: "AtlantisTests",
             dependencies: ["AtlantisCore"],
             path: "Tests",
+            exclude: ["AtlantisCoreTests/Fixtures"], // made-up SEQTA JSON, read by path in the tests
             swiftSettings: testingSwiftFlags,
             linkerSettings: testingLinkerFlags
         ),

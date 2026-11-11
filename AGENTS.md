@@ -8,27 +8,34 @@ what your task needs.
 Atlantis is the user's **main Mac app**. Coding happens in T3 Code; everything else happens here:
 - **Planner:** Today screen, tasks, SEQTA (school LMS), an agent Inbox and an MCP server.
 - **Mini office suite:** **Docs** first (plain `.md` files), then Sheets (`.xlsx`) and Slides
-  (`.pptx`) later. A whiteboard is proposed. Built from a copied snapshot of GenOffice (Apache-2.0).
+  (`.pptx`) later, plus a **Whiteboard** (Excalidraw, `.excalidraw` files). Docs/Sheets/Slides come
+  from a copied snapshot of GenOffice (Apache-2.0).
 
 It's personal software for one user, a Year 9 student in Australia. There are no accounts, no
 cloud backend and no other users.
 
 ## Current status
 
-- Phase: **M0: shell + design system** (roadmap in PRD §12). Started 2026-11-06.
-- Done: step 1, app base (SwiftPM app, system-styled sidebar, build/test scripts); step 2, SEQTA
-  tab from seqta-app (BetterSEQTA+, pop-ups, downloads, file chooser) and a basic Settings page;
-  step 3, performance HUD + signposts, Keychain wrapper, `WebViews` factory (network blocked by
-  default), hidden SEQTA unloads after 10 min.
-- Left in M0: design tokens + Gallery, which wait for the approved design.
-- M1 spike **passed** (2026-11-06): GenOffice's editor in a locked-down WKWebView with a narrow
-  bridge; no-edit saves are byte-identical on 93/93 real files in WebKit. Code: `web/docs-editor`
-  (snapshot notes in `vendor/genoffice/SNAPSHOT.md`), `Sources/Atlantis/Docs`, `DocFolder`.
-- M1 step 2 (2026-11-07): **Docs is now the BetterSEQTA+ Writer** (`web/docs-editor/src/writer`,
-  copied, changes marked "Atlantis:") running on GenOffice's lossless editor, in the same Writer
-  folder (iCloud Drive/Writer). Its store code (from seqta-mcp) runs in the page; files go through
-  `DocsController` → `WriterFiles`. Claude/SEQTA-backed Writer features are off for now.
-- Next: rest of M1 (search across projects, paste images), then Writer features that need Claude.
+- **Building Phase 1 + 2 straight through** (decided 2026-11-09; see "How we work").
+- Done and in PRs (stacked; merge in order, with merge commits): #4 Writer (M1 step 2) → #5 shared
+  base (all sidebar pages, tokens in `Sources/Atlantis/Design`, `VaultPaths`/`TextFile`) → #6 Inbox,
+  #7 SEQTA sync engine + cache, #8 Tasks, #9 MCP plumbing (`atlantis-mcp`), #10 Docs search +
+  pasted images (M1 done).
+- Phase 1 built (2026-11-10): + #11 Today/SEQTA→Inbox/daily note, #12 Subjects + Messages,
+  #13 MCP tools + allow list. `p1/integration` merges everything (282 Swift tests).
+- Phase 2 built (2026-11-10): + #14 M5 agent runtime (`atlantis-agentd`, School), #15 M6 bots as
+  teammates (assign, @mention, autonomy), #16 M7 triggers, Chief/Scout, Today Team card, End of Day.
+  `p1/integration` merges everything (389 Swift + 76 web tests).
+- Whiteboard built early (2026-11-11, user's ask): Excalidraw 0.18.1 in `web/whiteboard`, boards in
+  iCloud Drive/Whiteboards, MCP tools `atlantis_whiteboard*` so T3 Code can draw. PR #17, merged
+  into `docs/history-record` (with the Docs edit history / writing record work).
+- `main` only had up to #4: every later PR merged into the branch below it. Branch
+  `release/to-main` (= `docs/history-record`, which holds all of #5–#17) brings it all to `main`.
+  From now on, open fix PRs against `main`.
+- **Now: fixing phase.** Work through `docs/issues.md` slowly, starting with what the user finds
+  in the real app. Phase 3 (M8 Docs+, M9 rituals + design pass) waits until then.
+- Not live-tested yet: SEQTA sync against real SEQTA (needs the user signed in).
+- Left from M0: the Gallery screen waits for the user's design.
 
 Update this section whenever a milestone starts or finishes.
 
@@ -53,6 +60,7 @@ Update this section whenever a milestone starts or finishes.
   - Docs → Writer projects in `~/Library/Mobile Documents/com~apple~CloudDocs/Writer` (PRD §7a)
   - Tasks → LifeOS vault `machine/tasks.md` (format in PRD §9)
   - Inbox → LifeOS vault `machine/atlantis/inbox.md`
+  - Whiteboards → `.excalidraw` files in `~/Library/Mobile Documents/com~apple~CloudDocs/Whiteboards`
   - Daily notes → LifeOS `daily/`. Write **only** the machine-owned parts (see the vault's AGENTS.md)
 - LifeOS vault path: `~/Library/Mobile Documents/com~apple~CloudDocs/LifeOS`. Never write to
   its `human/` folder.
@@ -80,7 +88,8 @@ Update this section whenever a milestone starts or finishes.
   one warm Docs editor. Budgets are in PRD §17.
 - **Narrow bridge:** the Docs page only gets the `WriterFiles` operations (text files inside the
   Writer folder) plus export/import/open; never widen it to other folders. Check paths in
-  Swift. Browser panels get no bridge.
+  Swift. The Whiteboard page gets only "save the open board" (Swift picks the board, the page never
+  names a file). Browser panels get no bridge.
 - **Make every web view through `WebViews`** (`Sources/Atlantis/WebViews.swift`) with
   `network: .none` unless it truly needs the web. Only the temporary SEQTA tab uses `.open`.
 - **MCP and agent sockets are Unix sockets with `0600` permissions and a peer-UID check, never TCP.**
@@ -108,9 +117,9 @@ is approved, restyle screens to match it and compare screenshots against it.
 
 ## How we work (changed 2026-11-09)
 
-- **Build first, fix later.** Build Phase 1 and Phase 2 (M1 rest → M7) straight through without
-  stopping for approval between steps; then switch to fixing issues slowly.
-- **One main thread** plans and codes. Start helper agents only when the user asks.
+- **Build first, fix later.** Phase 1 and Phase 2 (M1 rest → M7) were built straight through
+  (done 2026-11-10); now fix issues slowly, one small PR at a time.
+- **One main thread** plans, reviews and merges. Helper agents may build milestones or parts of them in their own worktrees (user OK 2026-11-09): Sonnet 5.5, Haiku 5.5, or Opus 5.5 at medium/high. Never `max` effort on any model; `xhigh` only for Haiku or the single biggest Opus task.
 - **Branch + PR per milestone:** each milestone gets its own branch (stacked on the previous one
   if it isn't merged yet) and a GitHub PR with a short "try this" list (2–5 things). The user
   merges. Never push to `main` directly. Committing and pushing milestone branches is allowed.

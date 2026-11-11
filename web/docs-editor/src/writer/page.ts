@@ -27,6 +27,8 @@ import {
   type BlockStyle,
   type Editor,
 } from "./editor";
+import { call } from "./fs";
+import { filterBots, findMention, mentionQuery, type MentionBot, type MentionRequest } from "./mentions";
 import { commentKey, contextBefore, findKey, locateQuote, reviewKey, reviewRanges, type Comment, type FindMeta, type Range } from "./plugins";
 import { diffSummary, diffWords, minutesLabel, plainText, textStats } from "./stats";
 import { hitAt, hitsIn, isSoft, KIND_LABEL, previewParts, proofBlocks, proofKey, Proofreader, type ProofHit } from "./proofread";
@@ -56,7 +58,12 @@ import {
   type AssessmentInfo,
 } from "./templates";
 import { ICONS, type IconName } from "./icons";
+import { IMAGE_ERROR_EVENT, setImageTarget } from "./images";
+import { groupHits, hitSummary, type SearchGroup } from "./search";
+import type { SearchHit, SearchResult, SearchSnippet } from "./fs";
 import { followTheme } from "./theme";
+import { measure, parseRecord, RecordKeeper, summarise, type RecordLine } from "./record";
+import { recordHtml, recordReport, type RecordViewInfo } from "./recordView";
 import "./page.css";
 
 /**
@@ -72,6 +79,8 @@ import "./page.css";
 export const ROOT_ID = "bsplus-writer";
 const PREFS_KEY = "bsplus-writer-prefs";
 const SAVE_DELAY = 700;
+/** Atlantis: how often a version is kept while you write (see autoSnapshot). */
+const AUTO_VERSION_MS = 10 * 60_000;
 
 type ViewMode = "doc" | "cork" | "outline";
 type InspectorTab = "info" | "contents" | "comments" | "history";
@@ -168,6 +177,13 @@ const iconBtn = (icon: IconName, title: string, onClick: (e: MouseEvent) => void
 
 const fmt = (n: number) => n.toLocaleString("en-AU");
 
+/** `text` with the first (case-insensitive) match of `query` in a <mark>. */
+function highlight(text: string, query: string): Child[] {
+  const at = text.toLowerCase().indexOf(query.toLowerCase());
+  if (at < 0 || !query) return [text];
+  return [text.slice(0, at), h("mark", { text: text.slice(at, at + query.length) }), text.slice(at + query.length)];
+}
+
 function daysUntil(iso?: string): number | null {
   if (!iso || !/^\d{4}-\d\d-\d\d/.test(iso)) return null;
   const due = new Date(`${iso.slice(0, 10)}T00:00:00`);
@@ -231,6 +247,12 @@ export class WriterPage {
   private stopped = false;
   private find = { open: false, replace: false, query: "", caseSensitive: false, index: 0 };
   private slash: { editor: Editor; from: number; index: number; el: HTMLElement } | null = null;
+  // Atlantis M6: @mentions. The popup lists bots that can be mentioned; the chip asks one.
+  private mention: { editor: Editor; from: number; index: number; el: HTMLElement } | null = null;
+  private mentionBots: MentionBot[] | null = null;
+  private mentionBotsLoad: Promise<void> | null = null;
+  private askChip: { el: HTMLElement; editor: Editor; req: MentionRequest } | null = null;
+  private asking = false;
   private bubble: HTMLElement | null = null;
   private activeComment: string | null = null;
   private editingComment: string | null = null;
@@ -247,6 +269,7 @@ export class WriterPage {
     document.addEventListener("keydown", this.onDocKey, true);
     document.addEventListener("visibilitychange", this.onVisible);
     window.addEventListener("beforeunload", this.flushOnUnload);
+    window.addEventListener(IMAGE_ERROR_EVENT, this.onImageError);
   }
 
   async start(): Promise<void> {
@@ -276,6 +299,7 @@ export class WriterPage {
     document.removeEventListener("keydown", this.onDocKey, true);
     document.removeEventListener("visibilitychange", this.onVisible);
     window.removeEventListener("beforeunload", this.flushOnUnload);
+    window.removeEventListener(IMAGE_ERROR_EVENT, this.onImageError);
     this.root.remove();
   }
 
@@ -381,11 +405,14 @@ export class WriterPage {
           h("h1", { text: "Writer" }),
           h("p", { class: "wr-muted", text: "Plan, draft and export your assignments. Everything is saved as Markdown files on your Mac." }),
         ]),
-        h("button", {
-          class: "wr-btn",
-          title: this.dir,
-          on: { click: () => void writerApi.openFile(this.dir, false).catch((e) => this.toast(e)) },
-        }, [h("span", { icon: "finder" }), "Open folder"]),
+        h("div", { class: "wr-home-actions" }, [
+          h("button", { class: "wr-btn", title: "Search every project (⌘⇧F)", on: { click: () => this.openSearchAll() } }, [h("span", { icon: "find" }), "Search"]), // Atlantis
+          h("button", {
+            class: "wr-btn",
+            title: this.dir,
+            on: { click: () => void writerApi.openFile(this.dir, false).catch((e) => this.toast(e)) },
+          }, [h("span", { icon: "finder" }), "Open folder"]),
+        ]),
       ]),
       grid,
       this.projects.length ? null : h("p", { class: "wr-muted wr-home-hint", text: "No projects yet. Start one above, or put a folder of .md files in the Writer folder." }),
@@ -519,10 +546,6 @@ export class WriterPage {
     }
     this.prefs.lastProject = id;
     this.savePrefs();
-    this.initialWords.clear();
-    walk(this.project.tree, (n) => {
-      if (n.kind === "doc") this.initialWords.set(`${id}:${n.path}`, countWords(n.body));
-    });
     this.history = [];
     this.future = [];
     const p = this.project;
@@ -621,12 +644,13 @@ export class WriterPage {
         addBtn,
         iconBtn("trash", "Move to Trash", () => this.selected && void this.trashItem(this.selected)),
         iconBtn("search", "Go to… (⌘O)", () => this.openPalette()),
+        iconBtn("find", "Search all projects (⌘⇧F)", () => this.openSearchAll()), // Atlantis
       ]),
       h("nav", { class: "wr-top-title", attrs: { "data-title": "", "aria-label": "Location" } }),
       h("div", { class: "wr-top-group" }, [views]),
       h("div", { class: "wr-top-group" }, [
         iconBtn("aa", "Editor appearance", (e) => this.appearanceMenu(e)),
-        iconBtn("compose", "Focus mode (⌘⇧F)", () => this.toggleCompose()),
+        iconBtn("compose", "Focus mode (⌘⇧D)", () => this.toggleCompose()), // Atlantis: ⌘⇧F is search across projects now
         h("button", { class: "wr-btn wr-btn-primary wr-export-btn", on: { click: () => this.openExport() } }, [h("span", { icon: "export" }), "Export"]),
         iconBtn("inspector", "Show/hide inspector (⌥⌘I)", () => this.togglePanel("inspector")),
       ]),
@@ -935,6 +959,7 @@ export class WriterPage {
       } });
       if (!n.role) items.push({ label: n.meta.compile === false ? "Include in export" : "Leave out of export", run: () => this.setMeta(n, { compile: n.meta.compile === false }) });
       if (n.kind === "doc") items.push({ label: "Take snapshot", run: () => void this.takeSnapshot(n) });
+      if (n.kind === "doc") items.push({ label: "Writing record…", run: () => void this.openRecord(n.path) });
       if (!n.role) {
         items.push("-");
         items.push({ label: inTrash ? "Delete forever…" : "Move to Trash", danger: true, run: () => void this.trashItem(n.path) });
@@ -1085,6 +1110,7 @@ export class WriterPage {
   }
 
   private mountEditor(slot: HTMLElement, n: BinderNode, focus: boolean): void {
+    this.pointImagesAt(n.path); // Atlantis: images in this doc resolve from its folder
     const editor = createEditor({
       element: slot,
       markdown: n.body ?? "",
@@ -1094,8 +1120,10 @@ export class WriterPage {
         this.scheduleSave(n.path);
         this.proofSoon();
       },
+      onEdit: (tr) => this.keeper()?.edit(n.path, measure(tr)), // Atlantis: writing record
       onFocus: (ed) => {
         this.activeEditor = ed;
+        this.pointImagesAt(n.path); // Atlantis: pasted images go in this doc's project
         this.updateFormatBar();
       },
       onSelection: (ed) => {
@@ -1103,10 +1131,15 @@ export class WriterPage {
         this.updateFormatBar();
         this.updateSelectionCount();
         this.updateSlash();
+        this.updateMention();
         this.updateBubble();
+        this.updateAskChip();
         if (this.prefs.typewriter) this.typewriterScroll(ed);
       },
-      onBlur: () => setTimeout(() => this.updateBubble(), 0),
+      onBlur: () => setTimeout(() => {
+        this.updateBubble();
+        this.updateAskChip();
+      }, 0),
       onKeyDown: (view, event) => this.onEditorKey(n.path, view, event),
       comments: () => this.commentsOf(n.path),
       activeComment: () => this.activeComment,
@@ -1123,6 +1156,13 @@ export class WriterPage {
       const hit = (e.target as HTMLElement).closest?.("[data-comment]") as HTMLElement | null;
       if (hit?.dataset.comment) this.showComment(hit.dataset.comment);
     });
+    // Atlantis: text copied or cut here and pasted back is moving your own writing, not pasting.
+    const remember = () => {
+      const { from, to } = editor.state.selection;
+      if (to > from) this.keeper()?.copiedText(editor.state.doc.textBetween(from, to, "\n", " "));
+    };
+    editor.view.dom.addEventListener("copy", remember);
+    editor.view.dom.addEventListener("cut", remember);
     this.editors.set(n.path, editor);
     if (!this.activeEditor) this.activeEditor = editor;
     if (focus && !this.root.querySelector(".wr-search:focus")) setTimeout(() => editor.isDestroyed || editor.commands.focus("start"), 0);
@@ -1130,6 +1170,7 @@ export class WriterPage {
   }
 
   private destroyEditors(): void {
+    void this.recordKeeper?.keeper.flush(); // Atlantis: counts words while the editors still exist
     for (const [path, ed] of this.editors) {
       if (this.timers.has(path)) this.saveNow(path); // fire and forget, uses current content
       ed.destroy();
@@ -1137,6 +1178,8 @@ export class WriterPage {
     this.editors.clear();
     this.activeEditor = null;
     this.closeSlash();
+    this.closeMention();
+    this.hideAskChip();
     this.hideBubble();
   }
 
@@ -1355,6 +1398,7 @@ export class WriterPage {
       sep(),
       btn("cite", "Reference maker: paste a link (⌥⌘R)", () => this.openReferences()),
       btn("comment", "Comment on selection (⌥⌘M)", () => this.addComment()),
+      btn("note", "Note to self, not exported (⌥⌘J)", () => this.addNote()),
       btn("find", "Find and replace (⌘F)", () => this.openFind(false)),
       h("span", { class: "wr-grow" }),
       h("span", { class: "wr-format-hint wr-faint", text: "Type / for headings, lists, tables…" }),
@@ -1464,6 +1508,7 @@ export class WriterPage {
 
   private async flushAll(): Promise<void> {
     await Promise.all([...this.timers.keys()].map((p) => this.saveNow(p)));
+    await this.recordKeeper?.keeper.flush();
   }
 
   private flushOnUnload = () => {
@@ -1486,6 +1531,13 @@ export class WriterPage {
       let oldCount = 0;
       walk(this.project.tree, () => oldCount++);
       if (!changed && count === oldCount) return;
+      // Atlantis: note text that changed outside the Writer in the writing record.
+      walk(fresh.tree, (n) => {
+        const old = findNode(this.project!.tree, n.path);
+        if (n.kind === "doc" && old && old.mtime !== n.mtime && (old.body ?? "") !== (n.body ?? "")) {
+          this.keeper()?.event(n.path, "outside", `${fmt(countWords(old.body))} → ${fmt(countWords(n.body))} words`);
+        }
+      });
       this.project = fresh;
       if (this.selected && !findNode(fresh.tree, this.selected)) this.selected = fresh.tree[0].path;
       this.renderBinder();
@@ -1563,10 +1615,16 @@ export class WriterPage {
     if (tab === "history") {
       const snaps = h("div", { class: "wr-snaps" }, [h("p", { class: "wr-faint wr-small", text: "Loading…" })]);
       box.append(
+        // Atlantis: the writing record (what you did, for school) and versions kept as you save.
         section(
-          "Snapshots",
-          h("p", { class: "wr-faint wr-small", text: "Save a copy before big changes. Restoring keeps a snapshot of what you had." }),
-          h("button", { class: "wr-btn wr-btn-full", on: { click: () => void this.takeSnapshot(n) } }, [h("span", { icon: "snapshot" }), "Take snapshot"]),
+          "Writing record",
+          h("p", { class: "wr-faint wr-small", text: "When you wrote, how much you typed or pasted, and what changed. Handy to show the work is yours." }),
+          h("button", { class: "wr-btn wr-btn-full", on: { click: () => void this.openRecord() } }, [h("span", { icon: "record" }), "Open writing record"]),
+        ),
+        section(
+          "Versions",
+          h("p", { class: "wr-faint wr-small", text: "Kept by themselves every 10 minutes while you write. Name your own before big changes; restoring keeps what you had." }),
+          h("button", { class: "wr-btn wr-btn-full", on: { click: () => void this.takeSnapshot(n) } }, [h("span", { icon: "snapshot" }), "Save a named version"]),
           snaps,
         ),
       );
@@ -1650,20 +1708,34 @@ export class WriterPage {
     }
     if (!box.isConnected) return;
     if (!list.length) {
-      box.replaceChildren(h("p", { class: "wr-faint wr-small", text: "No snapshots yet." }));
+      box.replaceChildren(h("p", { class: "wr-faint wr-small", text: "No versions yet. One is kept when you start writing, then every 10 minutes." }));
       return;
     }
-    box.replaceChildren(
-      ...list.map((s) =>
+    // Atlantis: grouped by day, newest first, with the change in words since the version before.
+    const rows: HTMLElement[] = [];
+    let lastDay = "";
+    list.forEach((s, i) => {
+      const at = s.at ? new Date(s.at) : null;
+      const dayLabel = at ? at.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short" }) : "";
+      if (dayLabel && dayLabel !== lastDay) {
+        rows.push(h("div", { class: "wr-snap-day", text: dayLabel }));
+        lastDay = dayLabel;
+      }
+      const clock = at ? at.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" }) : s.id;
+      const auto = !s.name || s.name === "Auto";
+      const older = list[i + 1];
+      const delta = older ? s.words - older.words : 0;
+      rows.push(
         h("div", { class: "wr-snap" }, [
           h("div", {}, [
-            h("strong", { text: s.name || (s.at ? new Date(s.at).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : s.id) }),
-            h("span", { class: "wr-faint wr-small", text: `${s.name && s.at ? `${new Date(s.at).toLocaleDateString("en-AU", { day: "numeric", month: "short" })} · ` : ""}${fmt(s.words)} words` }),
+            h("strong", { text: auto ? clock : s.name }),
+            h("span", { class: "wr-faint wr-small", text: `${auto ? "Auto" : clock} · ${fmt(s.words)} words${older && delta ? ` (${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta))})` : ""}` }),
           ]),
           h("button", { class: "wr-btn wr-btn-small", text: "View", on: { click: () => this.viewSnapshot(n, s) } }),
         ]),
-      ),
-    );
+      );
+    });
+    box.replaceChildren(...rows);
   }
 
   private async takeSnapshot(n: BinderNode): Promise<void> {
@@ -1736,10 +1808,117 @@ export class WriterPage {
       this.renderMain();
       this.renderInspector();
       this.renderFooter();
+      this.keeper()?.event(n.path, "restore", `the version from ${s.at ? new Date(s.at).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : s.id}${s.name && s.name !== "Auto" ? ` (“${s.name}”)` : ""}`);
       this.toast("Restored. What you had is kept as a snapshot.");
     } catch (err) {
       this.toast(err);
     }
+  }
+
+  // ── Writing record (Atlantis) ────────────────────────────────────────────
+  private recordKeeper: { id: string; keeper: RecordKeeper } | null = null;
+
+  /** The open project's writing record keeper (record.ts), made on first use. */
+  private keeper(): RecordKeeper | null {
+    const p = this.project;
+    if (!p || this.stopped) return null;
+    if (this.recordKeeper?.id !== p.id) {
+      void this.recordKeeper?.keeper.flush();
+      const id = p.id;
+      this.recordKeeper = {
+        id,
+        keeper: new RecordKeeper({
+          append: (lines) => writerApi.recordAppend(id, lines).then(() => undefined),
+          words: (doc) => {
+            const ed = this.editors.get(doc);
+            if (ed && !ed.isDestroyed) return countWords(ed.getMarkdown());
+            return countWords(this.project?.id === id ? findNode(this.project.tree, doc)?.body : "");
+          },
+        }),
+      };
+    }
+    return this.recordKeeper.keeper;
+  }
+
+  /** Shows the writing record for one doc (`path`) or, with null, the whole project. */
+  private async openRecord(path: string | null = this.node?.kind === "doc" ? this.node.path : null): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    await this.flushAll();
+    let lines: RecordLine[];
+    try {
+      lines = parseRecord(await writerApi.recordRead(p.id));
+    } catch (err) {
+      this.toast(err);
+      return;
+    }
+    const doc = path ? findNode(p.tree, path) : null;
+    const versions = doc ? await writerApi.snapshots(p.id, doc.path).then((l) => l.length).catch(() => undefined) : undefined;
+    let scope: "doc" | "project" = doc ? "doc" : "project";
+    const titleOf = (d: string) => findNode(p.tree, d)?.title ?? d.replace(/^.*\//, "").replace(/\.(md|markdown|txt)$/i, "");
+    const build = () => {
+      const one = scope === "doc" && doc ? doc : null;
+      const sum = summarise(lines, one ? new Set([one.path]) : undefined);
+      const info: RecordViewInfo = {
+        title: one ? one.title : p.title,
+        scope: one ? "This document" : "Whole project",
+        titleOf,
+        wordsNow: one ? countWords(one.body) : p.tree.filter((r) => r.role !== "trash").reduce((t, r) => t + wordsUnder(r), 0),
+        versions: one ? versions : undefined,
+        author: p.settings.author || this.host.settings().author || undefined,
+      };
+      return { sum, info };
+    };
+    const body = h("div", { class: "wr-rec" });
+    const status = h("span", { class: "wr-muted wr-small" });
+    const draw = () => {
+      const { sum, info } = build();
+      body.innerHTML = recordHtml(sum, info); // built from escaped text only (recordView.ts)
+    };
+    let seg: HTMLElement | null = null;
+    if (doc) {
+      seg = h("div", { class: "wr-seg-text wr-rec-scope" });
+      const pick = (v: "doc" | "project") => {
+        scope = v;
+        seg!.querySelectorAll("button").forEach((b) => b.classList.toggle("is-on", b.dataset.v === v));
+        draw();
+      };
+      seg.append(
+        h("button", { text: "This document", attrs: { "data-v": "doc" }, on: { click: () => pick("doc") } }),
+        h("button", { text: "Whole project", attrs: { "data-v": "project" }, on: { click: () => pick("project") } }),
+      );
+      seg.querySelector(`[data-v="${scope}"]`)?.classList.add("is-on");
+    }
+    const save = async () => {
+      const { sum, info } = build();
+      status.textContent = "Making the PDF…";
+      try {
+        const r = await writerApi.export(p.id, { name: `${info.title} writing record`, format: "pdf", html: recordReport(sum, info) });
+        status.replaceChildren(
+          `Saved ${r.name} in Exports. `,
+          h("button", { class: "wr-link", text: "Show", on: { click: () => void writerApi.openFile(r.path, true).catch((e) => this.toast(e)) } }),
+        );
+      } catch (err) {
+        status.textContent = err instanceof Error ? err.message : String(err);
+      }
+    };
+    this.openModal("Writing record", [seg, body], [
+      h("button", { class: "wr-btn", on: { click: () => void save() } }, [h("span", { icon: "record" }), "Save as PDF"]),
+      status,
+      h("span", { class: "wr-grow" }),
+      h("button", { class: "wr-btn wr-btn-primary", text: "Close", on: { click: () => this.closeModal() } }),
+    ], "wide");
+    draw();
+  }
+
+  /** Atlantis: a note to self at the caret (a ```note block: shown here, never exported). */
+  private addNote(): void {
+    const e = this.activeEditor;
+    if (!e || e.isDestroyed || !e.isEditable) {
+      this.toast("Click into a document first.");
+      return;
+    }
+    e.chain().focus().setCodeBlock({ language: "note" }).run();
   }
 
   // ── Footer ───────────────────────────────────────────────────────────────
@@ -1815,6 +1994,7 @@ export class WriterPage {
       { label: "Show in Finder", run: () => void writerApi.openFile(p.dir, true).catch((er) => this.toast(er)) },
       { label: "Open Exports folder", run: () => void writerApi.openFile(`${p.dir}/Exports`, false).catch(() => this.toast("Nothing exported yet.")) },
       { label: "Reload from disk", run: () => void this.reload() },
+      { label: "Writing record…", run: () => void this.openRecord(null) },
       "-",
       ...(switchItems.length ? [...switchItems, "-" as const] : []),
       { label: "All projects", run: () => void this.goHome() },
@@ -1960,6 +2140,7 @@ export class WriterPage {
           const r = await writerApi.convert(f.name, await readAsBase64(f));
           const body = r.markdown ?? htmlToMarkdown(r.html ?? "");
           const { path } = await writerApi.add(this.project.id, { parent, kind: "doc", title: f.name.replace(/\.[^.]+$/, ""), body });
+          this.keeper()?.event(path, "import", `${f.name} (${fmt(countWords(body))} words)`);
           last = path;
         } catch (err) {
           this.toast(err);
@@ -2491,17 +2672,19 @@ export class WriterPage {
   }
 
   // ── Safety & numbers ─────────────────────────────────────────────────────
-  private initialWords = new Map<string, number>();
 
-  /** Keeps an automatic snapshot of a document before the first save of a writing session. */
+  /**
+   * Keeps an automatic version of a document before a save overwrites it, at most every
+   * AUTO_VERSION_MS (Atlantis: was once per 6 hours). Together these are the doc's edit history;
+   * the store skips empty docs and copies that match the newest one.
+   */
   private async autoSnapshot(projectId: string, n: BinderNode): Promise<void> {
     const key = `${projectId}:${n.path}`;
     const last = this.prefs.autoSnap[key] ?? 0;
-    if (Date.now() - last < 6 * 3600_000) return;
-    if ((this.initialWords.get(key) ?? countWords(n.body)) < 25) return;
+    if (Date.now() - last < AUTO_VERSION_MS) return;
     this.prefs.autoSnap[key] = Date.now();
     this.savePrefs();
-    await writerApi.snapshot(projectId, n.path, "Auto").catch(() => {});
+    await writerApi.snapshot(projectId, n.path, "Auto", true).catch(() => {});
   }
 
   private todayChip(draftWords: number): HTMLElement | null {
@@ -3094,6 +3277,129 @@ export class WriterPage {
     return `${start ? "…" : ""}${text.slice(start, i + q.length + 40).trim()}…`;
   }
 
+  // ── Atlantis: images and search across projects ─────────────────────────────
+  /** Where pasted images go and where relative image links resolve from: the doc at `path`. */
+  private pointImagesAt(path: string): void {
+    const p = this.project;
+    setImageTarget(p && this.dir ? { projectDir: `${this.dir}/${p.id}`, docFile: `${this.dir}/${p.id}/${path}` } : null);
+  }
+
+  private onImageError = (e: Event) => this.toast(new Error((e as CustomEvent<string>).detail));
+
+  /** ⌘⇧F: find text in every project's documents (title and body). Swift reads the files on demand. */
+  openSearchAll(): void {
+    if (this.modal?.classList.contains("is-search-modal")) return void this.modal.querySelector<HTMLInputElement>(".wr-gsearch-input")?.select();
+    const input = h("input", { class: "wr-input wr-palette-input wr-gsearch-input", attrs: { placeholder: "Search all projects…", "aria-label": "Search all projects", type: "search" } });
+    const status = h("div", { class: "wr-gsearch-status wr-faint wr-small", attrs: { role: "status" } });
+    const list = h("div", { class: "wr-palette-list wr-gsearch-list", attrs: { role: "listbox" } });
+    let rows: Array<{ el: HTMLElement; open: () => void }> = [];
+    let index = 0;
+    let seq = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let dirty = false; // typed since the last search
+    const mark = () => {
+      rows.forEach((r, i) => {
+        r.el.classList.toggle("is-active", i === index);
+        r.el.setAttribute("aria-selected", String(i === index));
+      });
+      rows[index]?.el.scrollIntoView({ block: "nearest" });
+    };
+    const show = (query: string, result: SearchResult) => {
+      list.replaceChildren();
+      rows = [];
+      index = 0;
+      const groups = groupHits(result.hits, this.projects);
+      status.textContent = !result.hits.length ? "No matches." : hitSummary(result, groups);
+      for (const g of groups) list.append(...this.searchGroup(g, query, rows, () => this.closeModal()));
+      mark();
+    };
+    const run = async () => {
+      dirty = false;
+      const query = input.value.trim();
+      const mine = ++seq;
+      if (!query) {
+        list.replaceChildren();
+        rows = [];
+        status.textContent = "Searches titles and text in every project.";
+        return;
+      }
+      try {
+        await this.flushAll(); // so what you just typed is found too
+        const result = await writerApi.search(query);
+        if (mine === seq && this.modal?.contains(input)) show(query, result);
+      } catch (err) {
+        if (mine === seq) status.textContent = err instanceof Error ? err.message : String(err);
+      }
+    };
+    input.addEventListener("input", () => {
+      dirty = true;
+      clearTimeout(timer);
+      timer = setTimeout(() => void run(), 150); // runs only when you type; nothing in the background
+    });
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (rows.length) index = (index + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+        mark();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (dirty) {
+          clearTimeout(timer);
+          void run();
+        } else rows[index]?.open();
+      } else if (e.key === "Escape") this.closeModal();
+      else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyF") e.preventDefault();
+    });
+    status.textContent = "Searches titles and text in every project.";
+    this.openModal("", [input, status, list], [], "search");
+    this.modal?.classList.add("is-search-modal");
+    setTimeout(() => input.focus(), 10);
+  }
+
+  private searchGroup(g: SearchGroup, query: string, rows: Array<{ el: HTMLElement; open: () => void }>, close: () => void): HTMLElement[] {
+    const out: HTMLElement[] = [h("div", { class: "wr-palette-group", text: g.title })];
+    for (const hit of g.hits) {
+      const open = (snippet?: SearchSnippet) => {
+        close();
+        void this.openSearchHit(hit, query, snippet);
+      };
+      const el = h("button", { class: "wr-gsearch-hit", attrs: { role: "option", "aria-selected": "false" }, on: { click: () => open(hit.snippets[0]) } }, [
+        h("span", { class: "wr-gsearch-title" }, [
+          h("span", { class: "wr-palette-icon", icon: "docText" }),
+          h("span", { class: "wr-menu-label" }, hit.titleMatches ? highlight(hit.title, query) : [hit.title]),
+          h("span", { class: "wr-faint wr-small", text: hit.count > 1 ? `${hit.count} matches` : hit.folder }),
+        ]),
+        ...hit.snippets.map((s) =>
+          h("span", { class: "wr-gsearch-snippet", on: { click: (ev) => { ev.stopPropagation(); open(s); } } }, [s.before, h("mark", { text: s.match }), s.after]),
+        ),
+      ]);
+      el.addEventListener("mousemove", () => {
+        const at = rows.findIndex((r) => r.el === el);
+        if (at >= 0 && !el.classList.contains("is-active")) {
+          rows.forEach((r) => r.el.classList.toggle("is-active", r.el === el));
+        }
+      });
+      rows.push({ el, open: () => open(hit.snippets[0]) });
+      out.push(el);
+    }
+    return out;
+  }
+
+  /** Opens the project and doc a search result is in and jumps to the match with the find bar. */
+  private async openSearchHit(hit: SearchHit, query: string, snippet?: SearchSnippet): Promise<void> {
+    if (this.project?.id !== hit.project) await this.openProject(hit.project);
+    const p = this.project;
+    if (!p || p.id !== hit.project) return;
+    if (!findNode(p.tree, hit.relPath)) return this.toast(new Error("That document isn't in the project any more."));
+    this.select(hit.relPath);
+    if (this.viewFor(this.node) !== "doc") this.setView("doc");
+    if (!hit.count || !snippet) return; // matched the title only
+    this.openFind(false, query);
+    this.find.index = snippet.occurrence;
+    this.refreshFind(true);
+  }
+
   // ── Find & replace ───────────────────────────────────────────────────────
   private openFind(replace = false, query?: string): void {
     if (this.viewFor(this.node) !== "doc") {
@@ -3257,6 +3563,36 @@ export class WriterPage {
   // ── Slash menu ───────────────────────────────────────────────────────────
   private onEditorKey(_path: string, view: EditorView, e: KeyboardEvent): boolean {
     const ed = this.activeEditor;
+    if (this.mention) {
+      const items = this.mentionItems();
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        this.mention.index = (this.mention.index + (e.key === "ArrowDown" ? 1 : -1) + items.length) % Math.max(1, items.length);
+        this.drawMention();
+        return true;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && items.length && !e.metaKey && !e.ctrlKey) {
+        this.runMention(items[this.mention.index]);
+        return true;
+      }
+      if (e.key === "Escape") {
+        this.closeMention();
+        return true;
+      }
+    }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && this.askChip && ed?.view === view) {
+      void this.askBot();
+      return true;
+    }
+    if (e.key === "@" && !e.metaKey && !e.ctrlKey && ed && ed.view === view) {
+      const { $from, empty } = view.state.selection;
+      if (empty && $from.parent.type.name !== "codeBlock") {
+        const before = $from.parent.textBetween(0, $from.parentOffset, " ", " ");
+        if (!before || /[\s(]$/.test(before)) {
+          const from = $from.pos;
+          setTimeout(() => void this.openMention(ed, from), 0);
+        }
+      }
+    }
     if (this.slash) {
       const items = this.slashItems();
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -3364,6 +3700,158 @@ export class WriterPage {
   private closeSlash(): void {
     this.slash?.el.remove();
     this.slash = null;
+  }
+
+  // ── @mentions (Atlantis M6) ──────────────────────────────────────────────
+  /** Bots that can be @mentioned (names only), from Swift. Fresh each time the popup opens. */
+  private loadMentionBots(fresh = false): Promise<void> {
+    if (fresh || !this.mentionBotsLoad) {
+      this.mentionBotsLoad = call<MentionBot[]>("agents.list")
+        .then((bots) => {
+          this.mentionBots = Array.isArray(bots) ? bots : [];
+        })
+        .catch(() => {
+          this.mentionBots = [];
+        });
+    }
+    return this.mentionBotsLoad;
+  }
+
+  private async openMention(editor: Editor, from: number): Promise<void> {
+    await this.loadMentionBots(true);
+    if (editor.isDestroyed || !this.mentionBots?.length) return;
+    if (editor.state.doc.textBetween(from, Math.min(from + 1, editor.state.doc.content.size), " ") !== "@") return;
+    this.closeMention();
+    const el = h("div", { class: "wr-menu wr-slash wr-mention", attrs: { role: "listbox", "aria-label": "Mention a bot" } });
+    this.root.append(el);
+    this.mention = { editor, from, index: 0, el };
+    this.hideAskChip();
+    this.updateMention();
+  }
+
+  private mentionQueryText(): string | null {
+    const m = this.mention;
+    if (!m) return null;
+    const { state } = m.editor;
+    const head = state.selection.head;
+    if (head <= m.from || m.from >= state.doc.content.size) return null;
+    if (state.doc.textBetween(m.from, m.from + 1, " ") !== "@") return null;
+    if (state.doc.resolve(head).parent !== state.doc.resolve(m.from).parent) return null;
+    return mentionQuery(state.doc.textBetween(m.from, head, " "));
+  }
+
+  private mentionItems(): MentionBot[] {
+    const q = this.mentionQueryText();
+    return q === null ? [] : filterBots(this.mentionBots ?? [], q);
+  }
+
+  private updateMention(): void {
+    if (!this.mention) return;
+    if (this.mentionQueryText() === null || !this.mentionItems().length) return this.closeMention();
+    this.drawMention();
+  }
+
+  private drawMention(): void {
+    const m = this.mention;
+    if (!m) return;
+    const items = this.mentionItems();
+    if (m.index >= items.length) m.index = 0;
+    m.el.replaceChildren(
+      h("div", { class: "wr-slash-head wr-faint", text: "Ask a bot" }),
+      ...items.map((bot, i) =>
+        h("button", {
+          class: `wr-menu-item ${i === m.index ? "is-active" : ""}`,
+          attrs: { role: "option", "aria-selected": String(i === m.index) },
+          on: { mousedown: (e) => e.preventDefault(), click: () => this.runMention(bot) },
+        }, [h("span", { class: "wr-menu-check", text: bot.avatar }), h("span", { class: "wr-menu-label", text: bot.name }), h("span", { class: "wr-faint wr-kbd", text: `@${bot.id}` })]),
+      ),
+    );
+    try {
+      const c = m.editor.view.coordsAtPos(m.from);
+      const w = m.el.offsetWidth;
+      const ht = m.el.offsetHeight;
+      const below = c.bottom + 6 + ht < window.innerHeight;
+      m.el.style.left = `${Math.min(c.left, window.innerWidth - w - 8)}px`;
+      m.el.style.top = `${below ? c.bottom + 6 : c.top - ht - 6}px`;
+    } catch {}
+  }
+
+  /** Writes `@<id> ` in place of what was typed; the request follows as plain text. */
+  private runMention(bot: MentionBot): void {
+    const m = this.mention;
+    if (!m) return;
+    this.closeMention();
+    const head = m.editor.state.selection.head;
+    m.editor.chain().focus().insertContentAt({ from: m.from, to: head }, `@${bot.id} `).run();
+  }
+
+  private closeMention(): void {
+    this.mention?.el.remove();
+    this.mention = null;
+  }
+
+  /** Shows "Ask School ⌘↩" at the end of a paragraph holding `@school <request>`. */
+  private updateAskChip(): void {
+    const ed = this.activeEditor;
+    if (!ed || ed.isDestroyed || !ed.isFocused || !ed.isEditable || this.mention || this.slash) return this.hideAskChip();
+    const { $from } = ed.state.selection;
+    const text = $from.parent.textContent;
+    if ($from.parent.type.name === "codeBlock" || !text.includes("@")) return this.hideAskChip();
+    if (this.mentionBots === null) {
+      void this.loadMentionBots().then(() => this.updateAskChip());
+      return;
+    }
+    const bots = this.mentionBots;
+    const req = findMention(text, bots.map((b) => b.id));
+    const bot = req && bots.find((b) => b.id === req.bot);
+    if (!req || !bot) return this.hideAskChip();
+    let el = this.askChip?.el;
+    if (!el) {
+      el = h("button", {
+        class: "wr-ask-chip",
+        attrs: { type: "button", title: "Send this request and the doc to the bot. Its answer goes to your Inbox." },
+        on: { mousedown: (e) => e.preventDefault(), click: () => void this.askBot() },
+      });
+      this.root.append(el);
+    }
+    this.askChip = { el, editor: ed, req };
+    el.replaceChildren(
+      h("span", { text: this.asking ? `Asking ${bot.name}…` : `${bot.avatar} Ask ${bot.name}` }),
+      h("span", { class: "wr-faint wr-kbd", text: "⌘↩" }),
+    );
+    el.toggleAttribute("disabled", this.asking);
+    try {
+      const c = ed.view.coordsAtPos($from.end());
+      const w = el.offsetWidth;
+      el.style.left = `${Math.max(8, Math.min(c.right + 10, window.innerWidth - w - 8))}px`;
+      el.style.top = `${c.top - 3}px`;
+    } catch {}
+  }
+
+  private hideAskChip(): void {
+    this.askChip?.el.remove();
+    this.askChip = null;
+  }
+
+  /** Saves the doc, then sends the request (Swift reads the saved doc and checks the path). */
+  private async askBot(): Promise<void> {
+    const chip = this.askChip;
+    const p = this.project;
+    if (!chip || !p || this.asking) return;
+    const path = [...this.editors].find(([, ed]) => ed === chip.editor)?.[0];
+    if (!path) return;
+    this.asking = true;
+    this.updateAskChip();
+    try {
+      await this.saveNow(path);
+      const r = await call<{ message?: string }>("agents.ask", { bot: chip.req.bot, path: `${this.dir}/${p.id}/${path}`, request: chip.req.request });
+      this.toast(r?.message ?? "Asked. The answer will land in your Inbox.");
+    } catch (err) {
+      this.toast(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      this.asking = false;
+      this.updateAskChip();
+    }
   }
 
   // ── Selection toolbar ────────────────────────────────────────────────────
@@ -3662,9 +4150,12 @@ export class WriterPage {
       { label: "Find in document", sub: "⌘F", icon: "find", kind: "cmd", run: () => this.openFind(false) },
       { label: "Find and replace", sub: "⌥⌘F", icon: "find", kind: "cmd", run: () => this.openFind(true) },
       { label: "Export…", sub: "⌘⇧E", icon: "export", kind: "cmd", run: () => this.openExport() },
-      { label: "Focus mode", sub: "⌘⇧F", icon: "compose", kind: "cmd", run: () => this.toggleCompose() },
+      { label: "Search all projects", sub: "⌘⇧F", icon: "find", kind: "cmd", run: () => this.openSearchAll() },
+      { label: "Focus mode", sub: "⌘⇧D", icon: "compose", kind: "cmd", run: () => this.toggleCompose() },
       { label: "Make a reference from a link", sub: "⌥⌘R", icon: "cite", kind: "cmd", run: () => this.openReferences() },
       { label: "Comment on selection", sub: "⌥⌘M", icon: "comment", kind: "cmd", run: () => this.addComment() },
+      { label: "Note to self (not exported)", sub: "⌥⌘J", icon: "note", kind: "cmd", run: () => this.addNote() },
+      { label: "Writing record", icon: "record", kind: "cmd", run: () => void this.openRecord() },
       { label: this.prefs.review ? "Stop highlighting long sentences & filler" : "Check writing: long sentences & filler words", sub: "", icon: "sparkle", kind: "cmd", run: () => this.toggleReview() },
       { label: "Spelling & grammar suggestions", sub: "", icon: "check", kind: "cmd", run: () => (this.root.querySelector("[data-proof-chip]") as HTMLElement | null)?.click() },
       { label: this.prefs.proof ? "Turn off spelling & grammar checks" : "Turn on spelling & grammar checks", sub: "", icon: "check", kind: "cmd", run: () => this.toggleProof() },
@@ -3746,9 +4237,9 @@ export class WriterPage {
 
   private openShortcuts(): void {
     const groups: Array<[string, Array<[string, string]>]> = [
-      ["Writing", [["Bold · Italic", "⌘B · ⌘I"], ["Highlight", "⌘⇧H"], ["Link", "⌘K"], ["Comment on selection", "⌥⌘M"], ["Reference from a link", "⌥⌘R or /ref"], ["Insert anything", "/ on a new line"], ["Heading", "## then space"], ["Bulleted · numbered list", "- · 1. then space"], ["Checklist", "[ ] then space"], ["Quote", "> then space"], ["Undo · Redo", "⌘Z · ⇧⌘Z"]]],
-      ["Finding", [["Go to anything", "⌘O"], ["Find", "⌘F"], ["Find and replace", "⌥⌘F"], ["Next · previous match", "↵ · ⇧↵"], ["Search the project", "⌘⇧O"]]],
-      ["Project", [["New document", "⌥⌘N"], ["Write · Cards · Outline", "⌃1 · ⌃2 · ⌃3"], ["Back · Forward", "⌘[ · ⌘]"], ["Binder · Inspector", "⌥⌘1 · ⌥⌘I"], ["Focus mode", "⌘⇧F"], ["Export", "⌘⇧E"], ["Save now", "⌘S"], ["Rename in binder", "↵"]]],
+      ["Writing", [["Bold · Italic", "⌘B · ⌘I"], ["Highlight", "⌘⇧H"], ["Link", "⌘K"], ["Comment on selection", "⌥⌘M"], ["Note to self (not exported)", "⌥⌘J or /note"], ["Reference from a link", "⌥⌘R or /ref"], ["Insert anything", "/ on a new line"], ["Heading", "## then space"], ["Bulleted · numbered list", "- · 1. then space"], ["Checklist", "[ ] then space"], ["Quote", "> then space"], ["Undo · Redo", "⌘Z · ⇧⌘Z"]]],
+      ["Finding", [["Go to anything", "⌘O"], ["Find", "⌘F"], ["Find and replace", "⌥⌘F"], ["Next · previous match", "↵ · ⇧↵"], ["Search the project", "⌘⇧O"], ["Search all projects", "⌘⇧F"]]],
+      ["Project", [["New document", "⌥⌘N"], ["Write · Cards · Outline", "⌃1 · ⌃2 · ⌃3"], ["Back · Forward", "⌘[ · ⌘]"], ["Binder · Inspector", "⌥⌘1 · ⌥⌘I"], ["Focus mode", "⌘⇧D"], ["Export", "⌘⇧E"], ["Save now", "⌘S"], ["Rename in binder", "↵"]]],
     ];
     this.openModal("Keyboard shortcuts", [
       h("div", { class: "wr-keys" }, groups.map(([title, rows]) =>
@@ -3770,22 +4261,25 @@ export class WriterPage {
       if (this.root.classList.contains("is-compose")) return this.toggleCompose();
       if (this.root.matches(".drawer-binder, .drawer-inspector")) return this.root.classList.remove("drawer-binder", "drawer-inspector");
     }
-    if (!this.project) return;
     const k = e.key.toLowerCase();
     const run = (fn: () => void) => {
       e.preventDefault();
       e.stopPropagation();
       fn();
     };
+    // Atlantis: search across all projects (⌘⇧F), also from the project list; Focus mode moved to ⌘⇧D.
+    if (mod && e.shiftKey && !e.altKey && e.code === "KeyF") return run(() => this.openSearchAll());
+    if (!this.project) return;
     if (mod && !e.altKey && !e.shiftKey && k === "f") return run(() => this.openFind(false));
     if (mod && e.altKey && e.code === "KeyF") return run(() => this.openFind(true));
-    if (mod && e.shiftKey && e.code === "KeyF") return run(() => this.toggleCompose());
+    if (mod && e.shiftKey && !e.altKey && e.code === "KeyD") return run(() => this.toggleCompose());
     if (mod && !e.shiftKey && k === "o") return run(() => this.openPalette());
     if (mod && e.shiftKey && e.code === "KeyO") return run(() => this.focusSearch());
     if (mod && e.shiftKey && e.code === "KeyP") return run(() => this.openPalette());
     if (mod && (k === "/" || e.code === "Slash")) return run(() => this.openShortcuts());
     if (mod && e.shiftKey && e.code === "KeyE") return run(() => this.openExport());
     if (mod && e.altKey && e.code === "KeyM") return run(() => this.addComment());
+    if (mod && e.altKey && e.code === "KeyJ") return run(() => this.addNote());
     if (mod && e.altKey && e.code === "KeyR") return run(() => this.openReferences());
     if (e.ctrlKey && !e.metaKey && !e.altKey && ["1", "2", "3"].includes(e.key)) return run(() => this.setView((["doc", "cork", "outline"] as const)[Number(e.key) - 1]));
     if (mod && e.altKey && e.code === "Digit1") return run(() => this.togglePanel("binder"));

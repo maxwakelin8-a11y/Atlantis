@@ -891,6 +891,26 @@
 #bsplus-writer .wr-find-hit { background: color-mix(in srgb, #ffd43b 45%, transparent); border-radius: 2px; }
 #bsplus-writer .wr-find-hit.is-current { background: #ff922b; color: #1d1d1f; box-shadow: 0 0 0 1px #ff922b; }
 
+/* Atlantis M6: "Ask School ⌘↩" beside a paragraph with an @mention. */
+#bsplus-writer .wr-ask-chip {
+  position: fixed;
+  z-index: 99990;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  border: 1px solid var(--wr-border);
+  background: var(--wr-popover);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+#bsplus-writer .wr-ask-chip:hover:not([disabled]) { background: var(--wr-accent); color: var(--wr-accent-fg); }
+#bsplus-writer .wr-ask-chip:hover:not([disabled]) .wr-faint { color: inherit; opacity: 0.75; }
+#bsplus-writer .wr-ask-chip[disabled] { opacity: 0.7; cursor: default; }
 #bsplus-writer .wr-slash { min-width: 230px; max-height: 320px; overflow: auto; }
 #bsplus-writer .wr-slash-head { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; padding: 4px 8px 4px; }
 #bsplus-writer .wr-menu-item.is-active { background: var(--wr-accent); color: var(--wr-accent-fg); }
@@ -1271,3 +1291,64 @@
 #bsplus-writer .wr-pf-fine { margin: 0; }
 #bsplus-writer .wr-pf-preview { margin: 0; padding: 6px 9px; border-radius: 7px; font-size: 12.5px; line-height: 1.5; color: var(--wr-muted); background: color-mix(in srgb, var(--wr-ok) 7%, transparent); border-left: 3px solid var(--wr-ok); }
 #bsplus-writer .wr-pf-add { color: var(--wr-ok); font-weight: 600; }
+
+/* Atlantis: search across projects (⌘⇧F) */
+#bsplus-writer .wr-modal.is-search { width: min(680px, 100%); align-self: start; margin-top: 10vh; overflow: hidden; }
+#bsplus-writer .wr-modal.is-search .wr-modal-body { padding: 0; gap: 0; }
+#bsplus-writer .wr-gsearch-status { padding: 8px 16px; border-bottom: 1px solid var(--wr-border-soft); min-height: 33px; }
+#bsplus-writer .wr-gsearch-list { max-height: 58vh; }
+#bsplus-writer .wr-gsearch-hit { display: flex; flex-direction: column; align-items: stretch; gap: 3px; width: 100%; padding: 8px 10px; border-radius: 7px; text-align: left; }
+#bsplus-writer .wr-gsearch-hit.is-active { background: var(--wr-hover); box-shadow: inset 0 0 0 1px var(--wr-accent); }
+#bsplus-writer .wr-gsearch-title { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+#bsplus-writer .wr-gsearch-title .wr-menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bsplus-writer .wr-gsearch-snippet { padding-left: 28px; font-size: 12.5px; line-height: 1.45; color: var(--wr-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: 4px; }
+#bsplus-writer .wr-gsearch-snippet:hover { color: var(--wr-fg); background: var(--wr-hover); }
+#bsplus-writer .wr-gsearch-hit mark { background: var(--wr-accent-soft); color: var(--wr-fg); border-radius: 3px; padding: 0 1px; font-weight: 600; }
+#bsplus-writer .wr-home-actions { display: flex; gap: 8px; }
+
+/* ── Atlantis: notes to self (```note blocks; never exported) ── */
+#bsplus-writer .wr-prose .md-note { margin: 0.6em 0 0.9em; }
+#bsplus-writer .wr-prose .md-note pre {
+  background: color-mix(in srgb, #f59f00 14%, var(--wr-paper, transparent));
+  border-left: 3px solid #f59f00;
+  border-radius: 4px 8px 8px 4px;
+  padding: 1.7em 1em 0.7em;
+  white-space: pre-wrap;
+}
+#bsplus-writer .wr-prose .md-note pre code { font-family: var(--wr-font); font-size: 0.92em; color: var(--wr-ink); }
+#bsplus-writer .wr-prose .md-note-label {
+  position: absolute;
+  top: 0.55em;
+  left: 1.15em;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #b26b00 85%, var(--wr-ink));
+  user-select: none;
+}
+
+/* ── Atlantis: versions list ── */
+#bsplus-writer .wr-snap-day { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--wr-faint); margin: 10px 0 2px; }
+#bsplus-writer .wr-snap-day:first-child { margin-top: 0; }
+
+/* ── Atlantis: writing record ── */
+#bsplus-writer .wr-rec-scope { margin-bottom: 12px; }
+#bsplus-writer .wr-rec h3 { font-size: 13px; margin: 18px 0 8px; }
+#bsplus-writer .wr-rec .rec-lede, #bsplus-writer .wr-rec .rec-sub, #bsplus-writer .wr-rec .rec-axis, #bsplus-writer .wr-rec .rec-foot, #bsplus-writer .wr-rec .rec-empty { color: var(--wr-muted); font-size: 12px; }
+#bsplus-writer .wr-rec .rec-lede { margin: 0 0 10px; }
+#bsplus-writer .wr-rec .rec-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+#bsplus-writer .wr-rec .rec-stat { display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; border: 1px solid var(--wr-border); border-radius: var(--wr-radius); background: var(--wr-card); }
+#bsplus-writer .wr-rec .rec-stat strong { font-size: 20px; font-weight: 600; }
+#bsplus-writer .wr-rec .rec-stat span { font-size: 12.5px; }
+#bsplus-writer .wr-rec .rec-stat em { font-style: normal; font-size: 11px; color: var(--wr-faint); }
+#bsplus-writer .wr-rec .rec-chart { display: block; width: 100%; height: 110px; border-bottom: 1px solid var(--wr-border); }
+#bsplus-writer .wr-rec .rec-line { stroke: var(--wr-accent); }
+#bsplus-writer .wr-rec .rec-axis { display: flex; justify-content: space-between; margin-top: 4px; }
+#bsplus-writer .wr-rec .rec-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+#bsplus-writer .wr-rec .rec-table th { text-align: left; font-weight: 600; color: var(--wr-muted); }
+#bsplus-writer .wr-rec .rec-table th, #bsplus-writer .wr-rec .rec-table td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--wr-border-soft); vertical-align: top; }
+#bsplus-writer .wr-rec .rec-paste { margin-bottom: 10px; }
+#bsplus-writer .wr-rec blockquote { margin: 3px 0 0; padding: 6px 10px; border-left: 3px solid var(--wr-border); background: var(--wr-card); white-space: pre-wrap; font-size: 12.5px; border-radius: 0 6px 6px 0; }
+#bsplus-writer .wr-rec .rec-events { padding-left: 18px; margin: 0; font-size: 12.5px; }
+#bsplus-writer .wr-rec .rec-foot { margin-top: 18px; }

@@ -12,6 +12,8 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
     private(set) var problem: String?
     private(set) var webView: WKWebView?
     @ObservationIgnored private(set) var files = WriterFiles(root: AppSettings.writerURL)
+    /// The bots, for @mentions (M6). Set by the app; the page only gets `agents.list` and `agents.ask`.
+    @ObservationIgnored var agents: (@MainActor () -> AgentService)?
 
     /// Creates the web view the first time Docs is shown.
     func start() async {
@@ -23,6 +25,10 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
             }
             let config = try await WebViews.configuration(network: .none, storage: .persistent(WebViews.docsStore))
             config.setURLSchemeHandler(EditorSchemeHandler(root: editor), forURLScheme: EditorSchemeHandler.scheme)
+            // Images in docs (`md-asset:///<path>`), confined to the Writer folder.
+            config.setURLSchemeHandler(WriterAssetSchemeHandler(files: { [weak self] in
+                self?.files ?? WriterFiles(root: AppSettings.writerURL)
+            }), forURLScheme: WriterAssetSchemeHandler.scheme)
             config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "writer")
             let webView = WebViews.make(config)
             self.webView = webView
@@ -94,6 +100,19 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
             return nil
         case "convert":
             return try await DocsExport.convert(ext: str("ext"), base64: str("data"))
+        case "agents.list":
+            // Names only: which bots can be @mentioned. Nothing else about them reaches the page.
+            return (agents?().mentionBots ?? []).map { ["id": $0.id, "name": $0.name, "avatar": $0.avatar] }
+        case "agents.ask":
+            // One request about one doc. The path is checked in Swift (Writer folder only) and the
+            // doc is read from disk; the bot's answer goes to the Inbox, never back into the page.
+            guard let service = agents?() else { throw ToolFailure("Bots aren't available.") }
+            do {
+                let message = try await service.ask(bot: str("bot"), docPath: str("path"), request: str("request"), writer: files)
+                return ["message": message]
+            } catch let failure as ToolFailure {
+                throw DocsBridgeError(message: failure.message)
+            }
         case "open":
             let url = try files.resolve(str("path"))
             if body["reveal"] as? Bool == true {
@@ -132,6 +151,27 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
             return ["kind": s.kind.rawValue, "size": s.size, "mtime": s.mtime]
         case "fs.copyDir":
             try await Self.background { try files.copyDir(from, to: to, skip: skip) }
+        case "fs.writeImage":
+            // A pasted or dropped image (base64), saved into <project>/assets only.
+            guard let data = Data(base64Encoded: body["data"] as? String ?? "") else { throw WriterFiles.Failure.notAnImage }
+            try await Self.background { try files.writeImage(path, data: data) }
+        case "fs.search":
+            let query = body["query"] as? String ?? ""
+            let limit = min(max(body["limit"] as? Int ?? 200, 1), 500)
+            let result = try await Self.background { files.search(query, limit: limit) }
+            return [
+                "truncated": result.truncated,
+                "scanned": result.scanned,
+                "hits": result.hits.map { hit -> [String: Any] in
+                    [
+                        "project": hit.project, "path": hit.path, "relPath": hit.relPath, "title": hit.title,
+                        "titleMatches": hit.titleMatches, "count": hit.count,
+                        "snippets": hit.snippets.map {
+                            ["before": $0.before, "match": $0.match, "after": $0.after, "occurrence": $0.occurrence]
+                        },
+                    ]
+                },
+            ] as [String: Any]
         default:
             Log.web.error("Docs bridge: unknown op \(op, privacy: .public)")
             throw WriterFiles.Failure.outsideFolder
@@ -139,8 +179,26 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
         return nil
     }
 
+    struct DocsBridgeError: LocalizedError {
+        var message: String
+        var errorDescription: String? { message }
+    }
+
     private nonisolated static func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
         try await Task.detached(priority: .userInitiated) { try work() }.value
+    }
+
+    /// Posts one message to the bridge from the page, as the page's own code would (debug).
+    func debugBridge(_ message: [String: String]) async -> String {
+        guard let webView else { return "no web view" }
+        do {
+            let result = try await webView.callAsyncJavaScript(
+                "return JSON.stringify(await window.webkit.messageHandlers.writer.postMessage(message))",
+                arguments: ["message": message], contentWorld: .page)
+            return result as? String ?? "nil"
+        } catch {
+            return "error: \(error.localizedDescription)"
+        }
     }
 
     // MARK: Round-trip check (debug)

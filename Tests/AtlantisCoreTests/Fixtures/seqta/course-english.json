@@ -1,0 +1,8 @@
+{"status":"200","payload":{"c":"ENGG9#1","t":"English 9","i":3830,"m":29611,
+ "cf":[{"filename":"English 9 outline.pdf","uuid":"aaaaaaaa-1111-2222-3333-444444444444","mimetype":"application/pdf","size":20480},{"filename":"no uuid.pdf"}],
+ "d":[{"n":0,"t":"Term 4","w":6,"l":[
+   {"d":"2026-11-09","s":"09:00:00","e":"09:50:00","p":"1"},
+   {"d":"2026-11-10","s":"09:00:00","e":"09:50:00","p":"1"}]}],
+ "w":[[
+   {"t":"Persuasive writing","h":"<p>Finish the <b>first draft</b> &amp; bring it to class.</p>","l":"<p>Plan</p>","i":1,"r":[{"filename":"Speech rubric.docx","uuid":"bbbbbbbb-1111-2222-3333-444444444444","mimetype":"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},{"filename":"English 9 outline.pdf","uuid":"aaaaaaaa-1111-2222-3333-444444444444"}]},
+   {"t":"","h":"","l":"","i":2}]]}}

@@ -134,8 +134,12 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
   const showSource = !hasPicture || caretInside
   const error = diagram && !diagram.ok && source.trim() ? diagram.error : null
 
+  // Atlantis: ```note blocks are the Writer's notes to self (left out of exports)
+  const isNote = language.toLowerCase() === 'note'
+
   const className = [
     'md-codeblock',
+    isNote && 'md-note',
     diagramLang && 'md-diagram',
     !showSource && 'md-diagram-collapsed',
   ]
@@ -144,6 +148,11 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
 
   return (
     <NodeViewWrapper className={className} data-diagram={hasPicture ? 'rendered' : undefined}>
+      {isNote ? (
+        <div className="md-note-label" contentEditable={false}>
+          Note to self · not exported
+        </div>
+      ) : (
       <div className="md-codeblock-bar" contentEditable={false}>
         <Dropdown
           className="md-codeblock-lang"
@@ -162,6 +171,7 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
           {copied ? t('codeCopied') : t('codeCopy')}
         </button>
       </div>
+      )}
       <pre>
         <NodeViewContent<'code'> as="code" />
       </pre>

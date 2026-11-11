@@ -25,7 +25,8 @@ import type { WriterFS } from "./fs";
 
 const PROJECT_FILE = ".writer.json";
 const TEXT_EXT = new Set([".md", ".markdown", ".txt"]);
-const HIDDEN_DIRS = new Set(["Exports", ".snapshots", ".deleted"]);
+// Atlantis: "assets" holds pasted images (see images.ts), so it isn't a binder folder.
+const HIDDEN_DIRS = new Set(["Exports", ".snapshots", ".deleted", "assets"]);
 const ROLES = ["draft", "research", "notes", "trash"];
 const ROLE_NAMES = { draft: "Draft", research: "Research", notes: "Notes", trash: "Trash" };
 const DOC_FIELDS = ["title", "synopsis", "status", "label", "compile", "target", "notes", "comments", "created"];
@@ -592,13 +593,21 @@ export function createWriterStore(fs: WriterFS, { log = (_msg: string) => {} } =
         return { moved };
       }),
 
-    /** Saves a copy of one document as it is now. */
-    async snapshot({ project, path, name }) {
+    /**
+     * Saves a copy of one document as it is now. Atlantis: `auto` copies (kept while you write)
+     * are skipped when the doc is empty or the same as the newest copy.
+     */
+    async snapshot({ project, path, name, auto }) {
       const dir = projectDir(project);
       const file = inside(dir, path);
       const text = await readFile(file, "utf8");
       const at = new Date();
       const folder = snapshotDir(dir, path);
+      if (auto) {
+        if (!countWords(parseDoc(text).body)) return { id: "", at: at.toISOString(), name: "", skipped: true };
+        const newest = (await readdir(folder).catch(() => [])).filter((f) => f.endsWith(".md")).sort().pop();
+        if (newest && (await readFile(join(folder, newest), "utf8").catch(() => "")) === text) return { id: newest, at: at.toISOString(), name: "", skipped: true };
+      }
       await mkdir(folder, { recursive: true });
       const stamp = at.toISOString().replace(/[:.]/g, "-");
       const label = safeName(name ?? "", "").slice(0, 60);
@@ -615,7 +624,7 @@ export function createWriterStore(fs: WriterFS, { log = (_msg: string) => {} } =
         files = (await readdir(folder)).filter((f) => f.endsWith(".md"));
       } catch {}
       const out = [];
-      for (const f of files.sort().reverse().slice(0, 50)) {
+      for (const f of files.sort().reverse().slice(0, 300)) {
         const m = /^(\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d+Z)(?: (.*))?\.md$/.exec(f);
         const text = await readFile(join(folder, f), "utf8").catch(() => "");
         const { body } = parseDoc(text);
@@ -634,6 +643,24 @@ export function createWriterStore(fs: WriterFS, { log = (_msg: string) => {} } =
       await mkdir(bin, { recursive: true });
       await rename(join(snapshotDir(dir, path), name), join(bin, `${Date.now()}-${name}`));
       return { removed: true };
+    },
+
+    /** Atlantis: the project's writing record (record.ts), as text ("" when there's none yet). */
+    async recordRead({ project }) {
+      const dir = projectDir(project);
+      return { text: await readFile(join(dir, ".writer-record.jsonl"), "utf8").catch(() => "") };
+    },
+
+    /** Atlantis: adds lines to the writing record (the whole file is rewritten atomically). */
+    async recordAppend({ project, lines }) {
+      const dir = projectDir(project);
+      const file = join(dir, ".writer-record.jsonl");
+      const add = (Array.isArray(lines) ? lines : []).map((l) => JSON.stringify(l)).join("\n");
+      if (!add) return { written: 0 };
+      let old = await readFile(file, "utf8").catch(() => "");
+      if (old && !old.endsWith("\n")) old += "\n";
+      await writeFile(file, `${old}${add}\n`);
+      return { written: lines.length };
     },
 
     /** Moves a whole project out of the list (into <writer folder>/.deleted). */

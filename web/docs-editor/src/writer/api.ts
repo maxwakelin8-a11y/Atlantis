@@ -1,4 +1,5 @@
-import { call, swiftFS, type WriterFS } from "./fs";
+import { call, swiftFS, type SearchResult, type WriterFS } from "./fs";
+import { installImageBridge } from "./images"; // Atlantis
 import { createWriterStore } from "./store";
 import type { CiteStyle, Reference } from "./cite";
 import type { ProofIssue } from "./proofread";
@@ -102,7 +103,9 @@ const LATER = "This needs Claude, which comes to Atlantis in a later step.";
 export const writerApi = {
   setDir: async (_dir: string) => {
     const { dir } = await call<{ dir: string }>("writer.dir");
-    store = createWriterStore(swiftFS(dir));
+    const files = swiftFS(dir);
+    store = createWriterStore(files);
+    installImageBridge(files); // Atlantis: pasted images are saved through Swift too
     return { dir };
   },
   projects: () => st().projects() as Promise<{ dir: string; projects: ProjectSummary[] }>,
@@ -122,10 +125,14 @@ export const writerApi = {
   folderMeta: (project: string, path: string, meta: DocMeta) => st().setFolderMeta({ project, path, meta }) as Promise<{ path: string }>,
   settings: (project: string, patch: { title?: string; settings?: ProjectSettings }) =>
     st().settings({ project, ...patch }) as Promise<{ title: string; settings: ProjectSettings }>,
-  snapshot: (project: string, path: string, name: string) => st().snapshot({ project, path, name }) as Promise<{ id: string; at: string }>,
+  snapshot: (project: string, path: string, name: string, auto = false) =>
+    st().snapshot({ project, path, name, auto }) as Promise<{ id: string; at: string; skipped?: boolean }>,
   snapshots: (project: string, path: string) =>
     (st().snapshots({ project, path }) as Promise<{ snapshots: Snapshot[] }>).then((r) => r.snapshots),
   deleteSnapshot: (project: string, path: string, id: string) => st().deleteSnapshot({ project, path, id }) as Promise<{ removed: true }>,
+  /** Atlantis: the writing record (record.ts). */
+  recordRead: (project: string) => (st().recordRead({ project }) as Promise<{ text: string }>).then((r) => r.text),
+  recordAppend: (project: string, lines: unknown[]) => st().recordAppend({ project, lines }) as Promise<{ written: number }>,
   removeProject: (project: string) => st().removeProject({ project }) as Promise<{ removed: true }>,
   duplicateProject: (project: string) => st().duplicateProject({ project }) as Promise<{ id: string }>,
   export: (
@@ -139,6 +146,8 @@ export const writerApi = {
   proofread: async (_paragraphs: Array<{ id: string; text: string }>): Promise<{ results: Record<string, ProofIssue[]> }> => {
     throw new Error(LATER);
   },
+  /** Atlantis: search every project's documents (Swift reads the files; nothing is indexed). */
+  search: (query: string, limit = 200) => call<SearchResult>("fs.search", { query, limit }),
   convert: (name: string, data: string) => st().convert({ name, data }) as Promise<{ markdown?: string; html?: string }>,
 };
 

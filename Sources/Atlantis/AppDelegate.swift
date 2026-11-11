@@ -6,7 +6,17 @@ import os
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let debug = DebugOptions.fromArguments()
     private lazy var model: AppModel = {
-        let model = AppModel(page: debug.page)
+        let model = AppModel(page: debug.page,
+                             seqtaCache: debug.seqtaCacheURL.map { SeqtaCache(root: $0) } ?? SeqtaCache(),
+                             planURL: debug.planURL ?? PlanFile.defaultURL,
+                             clockOffset: debug.clockOffset)
+        if debug.seqtaCacheURL != nil { model.seqtaSync.autoSyncEnabled = false }
+        if debug.morning || debug.teamAsk != nil {
+            model.triggerLedgerURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("atlantis-triggers-\(UUID().uuidString).json")
+        }
+        if debug.endOfDay { model.debugEndOfDay = true }
+        if let code = debug.subject { model.subjectCode = code }
         if let seconds = debug.seqtaUnloadAfter { model.seqtaUnloadAfter = .seconds(seconds) }
         return model
     }()
@@ -29,7 +39,112 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 fflush(stdout)
             }
         }
+        model.mcp.configure(model: model)
+        model.mcp.start() // background queue; idle afterwards
+        if debug.afterSync {
+            Task { [model] in
+                await model.debugRunAfterSync()
+                print("After-sync: inbox \(model.inbox.items.count) items, tasks \(model.tasks.tasks.count)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if debug.acceptInbox {
+            Task { [model] in
+                let inbox = model.inbox
+                for item in inbox.pending { try? await inbox.accept(id: item.id) }
+                print("Accepted: inbox pending \(inbox.pending.count), tasks \(model.tasks.tasks.count)")
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if let question = debug.agentAsk {
+            Task { [model, debug] in
+                model.page = .agents
+                let outcome = await model.agents.debugAsk(question, bot: debug.agentBot)
+                print(outcome)
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if debug.autoApprove { model.agents.debugAutoApprove = true }
+        if let title = debug.agentTask {
+            Task { [model, debug] in
+                print(await model.agents.debugTask(title, bot: debug.agentBot))
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if let path = debug.agentMention {
+            Task { [model, debug] in
+                // Through the real bridge: the page posts `agents.ask` like the Ask chip does.
+                model.page = .docs
+                await model.docs.start()
+                await model.docs.waitUntilReady()
+                let reply = await model.docs.debugBridge(["op": "agents.ask", "bot": debug.agentBot, "path": path,
+                                                          "request": debug.agentRequest])
+                print("agents.ask: \(reply)")
+                await model.agents.debugWaitForRuns()
+                print(model.agents.debugReport(origin: AgentOrigin.doc(
+                    (try? AgentMention.relativeDocPath(path, writer: WriterFiles(root: AppSettings.writerURL))) ?? path)))
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if debug.morning {
+            Task { [model] in
+                try? await Task.sleep(for: .milliseconds(500)) // after the window is up; debug only
+                model.agents.start()
+                model.teamTriggers.launchOrWake()
+                await model.agents.debugWaitForQueue()
+                print(model.agents.debugTeamReport())
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if let text = debug.teamAsk {
+            Task { [model] in
+                model.page = .agents
+                print(await model.agents.debugTeamAsk(text))
+                fflush(stdout)
+                NSApp.terminate(nil)
+            }
+        }
+        if let bot = debug.agentOpen {
+            Task { [model] in
+                model.page = .agents
+                model.agents.start()
+                model.agents.debugOpenLatest(bot: bot)
+            }
+        }
+        if debug.approvalCard {
+            Task { [model] in
+                try? await Task.sleep(for: .milliseconds(600))
+                await model.agents.debugShowApprovalCard()
+            }
+        }
         if debug.networkCheck { Task { await NetworkCheck.run() } }
+        if debug.seqtaSync {
+            Task { [model] in
+                await model.seqtaSync.refresh(reason: .manual)
+                let sync = model.seqtaSync
+                let result = sync.state == .idle ? (sync.lastReportSummary ?? "done") : "\(sync.state)"
+                Log.seqta.notice("Debug SEQTA sync: \(result, privacy: .public)")
+                print("SEQTA sync: \(result)")
+                fflush(stdout)
+            }
+        }
+        // Once-a-day sync at launch, and again on wake if today's hasn't run (no timers).
+        // After the first frame, so launch stays fast.
+        DispatchQueue.main.async { [model] in
+            model.startToday()
+            model.seqtaSync.startAutoSync()
+        }
+        if let id = debug.message { model.messages.select(id) }
+        if debug.compose {
+            model.messages.startCompose(MessageDraft(subject: "Excursion form", body: "Hi Ms Example,\n\nCould I hand the form in on Friday instead?\n\nThanks",
+                                                     toNames: ["Ms Example"]), inboxItemID: nil)
+        }
         if debug.showHUD { model.showsHUD = true }
         if let probe = ProcessInfo.processInfo.environment["ATLANTIS_DOCS_PROBE"] {
             // Debug: run JS in the Docs page after it loads, print the result (and a snapshot).
@@ -72,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 } catch {
                     Log.app.error("Snapshot failed: \(error.localizedDescription, privacy: .public)")
                 }
+                if let sheet = window.attachedSheet { window.endSheet(sheet) } // an open sheet blocks quitting
                 NSApp.terminate(nil)
             }
         }
@@ -80,15 +196,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var savedForQuit = false
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // Never lose edits on quit: save Docs first, then quit again. (Not .terminateLater: in that
+        // Never lose edits on quit: save Docs and the open board first, then quit again. (Not .terminateLater: in that
         // mode WebKit's JavaScript replies never arrive, so the save would wait forever.)
-        guard let docs = model.docsIfStarted, !savedForQuit else { return .terminateNow }
+        let docs = model.docsIfStarted, board = model.whiteboardIfStarted
+        guard docs != nil || board?.webView != nil, !savedForQuit else { return .terminateNow }
         Task {
-            await docs.flush()
+            await docs?.flush()
+            await board?.flush()
             savedForQuit = true
             sender.terminate(nil)
         }
         return .terminateCancel
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model.agentsIfStarted?.shutdown()
+        model.mcp.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -117,6 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc private func seqtaForward() { visibleSeqta?.goForward() }
     @objc private func seqtaHome() { visibleSeqta?.goHome() }
     @objc private func seqtaExtensionSettings() { visibleSeqta?.showExtensionSettings() }
+    @objc private func seqtaRefresh() { Task { await model.seqtaSync.refresh(reason: .manual) } }
     @objc private func toggleHUD() { model.showsHUD.toggle() }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -127,6 +251,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return visibleSeqta?.canGoBack == true
         case #selector(seqtaForward):
             return visibleSeqta?.canGoForward == true
+        case #selector(seqtaRefresh):
+            menuItem.title = model.seqtaSync.isSyncing ? "Refreshing SEQTA…" : "Refresh SEQTA"
+            return !model.seqtaSync.isSyncing
         case #selector(toggleHUD):
             menuItem.title = model.showsHUD ? "Hide Performance HUD" : "Show Performance HUD"
             return true
@@ -172,6 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         let view = NSMenu()
         view.addItem(commandItem("Reload", #selector(seqtaReload), "r"))
+        view.addItem(commandItem("Refresh SEQTA", #selector(seqtaRefresh), "R")) // ⌘⇧R: syncs the cache
         view.addItem(commandItem("Back", #selector(seqtaBack), "["))
         view.addItem(commandItem("Forward", #selector(seqtaForward), "]"))
         view.addItem(commandItem("SEQTA Home", #selector(seqtaHome), "H"))

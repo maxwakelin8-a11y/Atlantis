@@ -14,6 +14,7 @@ import { DocSession } from "../session";
 import { installLocaleShim } from "../locale";
 import { LocaleProvider } from "../../vendor/genoffice/renderer/i18n/locale";
 import type { EditorView } from "@tiptap/pm/view";
+import type { Transaction } from "@tiptap/pm/state";
 import { CommentHighlight, FindHighlight, FocusBlock, ReviewMarks, type Comment } from "./plugins";
 import { ProofMarks, type ProofIssue } from "./proofread";
 
@@ -65,6 +66,8 @@ export type WriterEditorOptions = {
   placeholder?: string;
   editable?: boolean;
   onChange: (editor: Editor) => void;
+  /** Atlantis: every change to the text (for the writing record). */
+  onEdit?: (tr: Transaction) => void;
   onFocus?: (editor: Editor) => void;
   onSelection?: (editor: Editor) => void;
   onBlur?: (editor: Editor) => void;
@@ -102,7 +105,10 @@ export function createEditor(opts: WriterEditorOptions): Editor {
       handleKeyDown: (view, event) => opts.onKeyDown?.(view, event) ?? false,
     },
     onUpdate: ({ editor, transaction }) => {
-      if (!loading && transaction.docChanged && !transaction.getMeta("uiOnly")) opts.onChange(editor);
+      if (!loading && transaction.docChanged && !transaction.getMeta("uiOnly")) {
+        opts.onEdit?.(transaction);
+        opts.onChange(editor);
+      }
     },
     onFocus: ({ editor }) => opts.onFocus?.(editor),
     onBlur: ({ editor }) => opts.onBlur?.(editor),
@@ -184,5 +190,6 @@ export const SLASH_ITEMS: Array<{ id: string; label: string; hint: string; keys:
   { id: "table", label: "Table", hint: "3×3", keys: "table grid columns", run: (e) => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   { id: "hr", label: "Divider", hint: "---", keys: "divider line rule separator break", run: (e) => e.chain().focus().setHorizontalRule().run() },
   { id: "ref", label: "Reference", hint: "⌥⌘R", keys: "reference cite citation source bibliography link harvard apa", run: () => {} },
+  { id: "note", label: "Note to self", hint: "not exported", keys: "note comment remind private annotation sticky todo self", run: (e) => e.chain().focus().setCodeBlock({ language: "note" }).run() },
   { id: "code", label: "Code block", hint: "```", keys: "code program", run: (e) => e.chain().focus().setCodeBlock().run() },
 ];

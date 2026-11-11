@@ -28,7 +28,7 @@ const result = await build({
 
 writeFileSync(join(out, 'index.html'), `<!doctype html>
 <html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: atlantis-asset:; font-src 'self' data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: md-asset:; font-src 'self' data:">
 <link rel="stylesheet" href="editor.css">
 </head><body><div id="root"></div><script src="editor.js"></script></body></html>
 `)

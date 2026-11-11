@@ -1,0 +1,7 @@
+{"status":"200","payload":{"items":[
+ {"date":"2026-11-10","from":"09:00:00","until":"09:50:00","description":"English 9","code":"ENGG9","room":"E12","staff":"Ms Example","period":"1","programmeID":3830,"metaID":29611,"type":"class","assessments":[]},
+ {"date":"2026-11-09","from":"09:55:00","until":"10:45:00","description":"Mathematics 9","code":"MATH9","room":"M3","staff":"Mr Sample","period":"2","programmeID":3831,"metaID":29610,"type":"class","notes":"<p>Bring a <b>calculator</b>.</p>"},
+ {"date":"2026-11-09","from":"09:00:00","until":"09:50:00","description":"English 9","code":"ENGG9","room":"E12","staff":"Ms Example","period":"1","programmeID":3830,"metaID":29611,"type":"class"},
+ {"date":"2026-11-09","from":"8:30:00","until":"8:50:00","description":"Tutorial","code":"TUT","room":"Hall","staff":"Ms Example","type":"tutorial","tutorID":77},
+ {"date":"","from":"09:00:00","until":"09:50:00","description":"Broken row","code":"ZZZ"}
+]}}
