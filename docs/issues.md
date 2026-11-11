@@ -35,6 +35,11 @@ Format: `- [ ] [bug|polish|perf] what happened · where · YYYY-MM-DD`
 - [ ] [bug] Queued bot runs are dropped when the app quits; the first sync of the day starts the morning plan even if it's an afternoon refresh · Agents · 2026-11-10
 - [ ] [polish] Inbox titles for Chief's hand-offs repeat Chief's request and can be long · Agents/Inbox · 2026-11-10
 - [ ] [polish] Debug screenshots taken while the Mac is asleep/locked have a blank sidebar (fallback drawing) · Tooling · 2026-11-10
+- [ ] [bug] Docs editor has no web-process crash handler: if the editor's web process dies, Docs stays blank until restart; reloading needs care because of unsaved text · Docs · 2026-11-11
+- [ ] [bug] `ATLANTIS_DOCS_PROBE` runs JavaScript from an environment variable in the Docs page in release builds; should be a debug-only option · App · 2026-11-11
+- [ ] [bug] Docs export checks only that the target file exists afterwards, so a failed export over an existing file can look like success (not reproduced) · Docs · 2026-11-11
+- [ ] [perf] Today uses `TimelineView(.everyMinute)` while visible; decide whether it fits "no repeating timers" · Today · 2026-11-11
+- [ ] [bug] The SEQTA tab builds its own `WKWebViewConfiguration` instead of `WebViews.configuration(network: .open)`, against the "every web view through WebViews" rule · SEQTA · 2026-11-11
 
 ## Fixed
 

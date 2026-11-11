@@ -132,17 +132,3 @@ struct SeqtaToolbar: ToolbarContent {
         }
     }
 }
-
-/// Placeholder for pages whose milestone hasn't landed yet.
-struct PlaceholderPage: View {
-    let page: Page
-    let note: String
-
-    var body: some View {
-        ContentUnavailableView {
-            Label(page.title, systemImage: page.systemImage)
-        } description: {
-            Text(note)
-        }
-    }
-}

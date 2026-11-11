@@ -66,6 +66,15 @@ public struct InboxItem: Identifiable, Equatable, Sendable {
         fields.first { $0.key == key }?.value
     }
 
+    /// A draft is only opened in Messages for the user to send, never accepted as is.
+    public var isMessageDraft: Bool { kind == "message.draft" }
+
+    /// Whether an always-allow list accepts this item as it's posted. A draft never is (only
+    /// Messages sends it), and a bot's item never is (its autonomy decides, PRD §7b).
+    public func isAutoAccepted(allowedKinds: [String]) -> Bool {
+        !isMessageDraft && !source.hasPrefix("agent:") && !kind.isEmpty && allowedKinds.contains(kind)
+    }
+
     public mutating func setField(_ key: String, _ value: String?) {
         if let index = fields.firstIndex(where: { $0.key == key }) {
             if let value { fields[index].value = value } else { fields.remove(at: index) }

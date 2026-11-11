@@ -104,3 +104,8 @@ Reusable lessons (dated bullets).
   top-down or one layer at a time, retarget the next PR to `main` (GitHub does this only when the
   base branch is deleted on merge). Check `git log origin/main` after merges; land the stack with
   one PR from its top branch if it was missed.
+
+## "It isn't in the app" usually means an old install (2026-11-11)
+- `~/Applications/Atlantis.app` only changes when `scripts/build-app.sh --install` runs. Before
+  debugging a missing feature, compare the installed binary's date with the feature's commit and
+  `strings` the binary for it. After landing a feature, install it (and relaunch) as part of the work.

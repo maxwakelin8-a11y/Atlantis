@@ -102,7 +102,7 @@ struct ComposeView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 150)
+                .frame(width: Size.recipientScope)
                 .onChange(of: scope) { Task { await model.loadPeople(scope) } }
             }
             peopleResults

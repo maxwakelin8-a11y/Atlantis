@@ -124,6 +124,19 @@ import Testing
         #expect(files.existing(uuid: request.uuid, name: "../../Sheet.pdf") == stored)
     }
 
+    @Test func fileCacheNeverBuildsAPathFromANonUUID() throws {
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let files = SeqtaFileCache(root: dir.appendingPathComponent("files"))
+        #expect(files.existing(uuid: "../..", name: "Sheet.pdf") == nil)
+        #expect(throws: SeqtaSyncError.self) { try files.store(Data("x".utf8), uuid: "../..", name: "Sheet.pdf") }
+        #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("files").path))
+
+        let uuid = "AAAAAAAA-1111-2222-3333-444444444444"
+        #expect(files.existing(uuid: uuid, name: "Sheet.pdf") == nil)
+        let stored = try files.store(Data("x".utf8), uuid: uuid, name: "Sheet.pdf")
+        #expect(files.existing(uuid: uuid, name: "Sheet.pdf") == stored)
+    }
+
     @Test func fileRequestsNeedARealUUID() {
         #expect(SeqtaFileRequest(source: .message, uuid: "../../etc/passwd") == nil)
         #expect(SeqtaFileRequest(source: .message, uuid: "1111&type=x") == nil)

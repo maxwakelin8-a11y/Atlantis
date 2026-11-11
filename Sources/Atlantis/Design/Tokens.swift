@@ -51,6 +51,8 @@ enum Size {
     static let sheetWidth: CGFloat = 640
     /// Tallest a sheet's list gets before it scrolls.
     static let sheetListMaxHeight: CGFloat = 360
+    /// The Staff / Students switch in the Messages compose view.
+    static let recipientScope: CGFloat = 150
 }
 
 enum Typo {

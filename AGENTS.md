@@ -32,6 +32,8 @@ cloud backend and no other users.
 - `main` only had up to #4: every later PR merged into the branch below it. Branch
   `release/to-main` (= `docs/history-record`, which holds all of #5–#17) brings it all to `main`.
   From now on, open fix PRs against `main`.
+- Fix PR 1 (2026-11-11, `fix/small-bugs-1`): Inbox drafts, Whiteboard crash handler, plan observer,
+  SEQTA file id check. The installed app now has the Whiteboard.
 - **Now: fixing phase.** Work through `docs/issues.md` slowly, starting with what the user finds
   in the real app. Phase 3 (M8 Docs+, M9 rituals + design pass) waits until then.
 - Not live-tested yet: SEQTA sync against real SEQTA (needs the user signed in).

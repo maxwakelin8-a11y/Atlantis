@@ -19,7 +19,7 @@ struct PerfHUD: View {
         }
         .font(.caption.monospaced())
         .padding()
-        .background(.regularMaterial, in: .rect(cornerRadius: 10))
+        .background(.regularMaterial, in: .rect(cornerRadius: Radius.m))
         .padding()
         .allowsHitTesting(false)
         .task {

@@ -30,6 +30,8 @@ final class WhiteboardController: NSObject, WKScriptMessageHandlerWithReply, WKN
     /// Hash of the open board as the page last saw it.
     @ObservationIgnored private var knownHash: String?
     @ObservationIgnored private var pageReady = false
+    /// The web process died while hidden, so nothing reloaded the page; `show()` loads it again.
+    @ObservationIgnored private var needsReload = false
     @ObservationIgnored private var watcher: FileWatcher?
     @ObservationIgnored private var visible = false
 
@@ -48,7 +50,13 @@ final class WhiteboardController: NSObject, WKScriptMessageHandlerWithReply, WKN
         await reloadList()
         if selected == nil || !boards.contains(where: { $0.path == selected }) { selected = boards.first?.path }
         startWatching()
-        guard webView == nil else { return }
+        if let webView {
+            if needsReload {
+                needsReload = false
+                webView.load(URLRequest(url: Self.home))
+            }
+            return
+        }
         do {
             guard let folder = Self.bundleFolder() else {
                 problem = "The whiteboard isn't built. Run `npm run build` in web/whiteboard."
@@ -81,6 +89,7 @@ final class WhiteboardController: NSObject, WKScriptMessageHandlerWithReply, WKN
         webView.uiDelegate = nil
         self.webView = nil
         pageReady = false
+        needsReload = false
         token = ""
     }
 
@@ -328,10 +337,10 @@ final class WhiteboardController: NSObject, WKScriptMessageHandlerWithReply, WKN
         return url
     }
 
-    func webView(_ webView: WKWebView, webContentProcessDidTerminate: WKWebView) {
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         pageReady = false
         token = ""
-        if visible { webView.load(URLRequest(url: Self.home)) }
+        if visible { webView.load(URLRequest(url: Self.home)) } else { needsReload = true }
     }
 
     // MARK: Helpers

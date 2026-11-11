@@ -109,7 +109,7 @@ struct InboxPage: View {
         .focused($listFocused)
         .onKeyPress("j") { move(by: 1) }
         .onKeyPress("k") { move(by: -1) }
-        .onKeyPress(.return) { act { accept($0) } }
+        .onKeyPress(.return) { act { activate($0) } }
         .onKeyPress(keys: [.delete, .deleteForward]) { _ in act { dismiss($0) } }
         .animation(Motion.quick, value: store.pending.map(\.id))
     }
@@ -120,6 +120,15 @@ struct InboxPage: View {
         selectNeighbour(of: id)
         Task {
             do { try await store.accept(id: id) } catch { /* shown by store.lastError */ }
+        }
+    }
+
+    /// Return: a draft opens in Messages (the user sends it there); anything else is accepted.
+    private func activate(_ id: String) {
+        if let item = store.pending.first(where: { $0.id == id }), item.isMessageDraft {
+            openDraft(item)
+        } else {
+            accept(id)
         }
     }
 
@@ -190,7 +199,7 @@ private struct InboxRow: View {
             }
             Spacer(minLength: Space.m)
             HStack(spacing: Space.s) {
-                if item.kind == "message.draft" {
+                if item.isMessageDraft {
                     // A draft is only ever opened for the user to send; accepting it here would
                     // just tick it off without sending anything.
                     Button("Open in Messages", action: openDraft)
@@ -216,13 +225,16 @@ private struct InboxRow: View {
         .padding(.vertical, Space.xs)
         .frame(minHeight: Size.listRowMinHeight)
         .contextMenu {
-            if item.kind == "message.draft" { Button("Open in Messages", action: openDraft) }
-            Button("Accept", action: accept)
+            if item.isMessageDraft {
+                Button("Open in Messages", action: openDraft)
+            } else {
+                Button("Accept", action: accept)
+            }
             Button("Edit…", action: edit)
             Button("Dismiss", action: dismiss)
             Divider()
             Button(isAllowed ? "Stop always allowing this kind" : "Always allow this kind", action: toggleAllowed)
-                .disabled(item.kind.isEmpty)
+                .disabled(item.kind.isEmpty || item.isMessageDraft)
         }
     }
 }
