@@ -98,3 +98,9 @@ Reusable lessons (dated bullets).
 - Unix socket paths max out at 104 bytes: the scratchpad path is too long for `ATLANTIS_MCP_SOCKET`;
   use a short one. A test copy with its own socket and `-whiteboardsPath <dir>` runs fine next to
   the user's app. Two calls in one `atlantis-mcp` stdin batch run in parallel (order isn't kept).
+
+## Stacked PRs don't reach main by themselves (2026-11-11)
+- Merging a stacked PR merges it into its base branch, not `main`. When the user merges a stack
+  top-down or one layer at a time, retarget the next PR to `main` (GitHub does this only when the
+  base branch is deleted on merge). Check `git log origin/main` after merges; land the stack with
+  one PR from its top branch if it was missed.

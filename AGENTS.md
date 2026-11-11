@@ -27,8 +27,11 @@ cloud backend and no other users.
   teammates (assign, @mention, autonomy), #16 M7 triggers, Chief/Scout, Today Team card, End of Day.
   `p1/integration` merges everything (389 Swift + 76 web tests).
 - Whiteboard built early (2026-11-11, user's ask): Excalidraw 0.18.1 in `web/whiteboard`, boards in
-  iCloud Drive/Whiteboards, MCP tools `atlantis_whiteboard*` so T3 Code can draw. Branch
-  `m11/whiteboard`, stacked on `docs/history-record`.
+  iCloud Drive/Whiteboards, MCP tools `atlantis_whiteboard*` so T3 Code can draw. PR #17, merged
+  into `docs/history-record` (with the Docs edit history / writing record work).
+- `main` only had up to #4: every later PR merged into the branch below it. Branch
+  `release/to-main` (= `docs/history-record`, which holds all of #5–#17) brings it all to `main`.
+  From now on, open fix PRs against `main`.
 - **Now: fixing phase.** Work through `docs/issues.md` slowly, starting with what the user finds
   in the real app. Phase 3 (M8 Docs+, M9 rituals + design pass) waits until then.
 - Not live-tested yet: SEQTA sync against real SEQTA (needs the user signed in).

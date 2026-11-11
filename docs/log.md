@@ -200,3 +200,12 @@
   `read` refusing names without `.excalidraw`.
 - Next: user installs the new build (quit Atlantis, `scripts/build-app.sh --install`), turns on
   "Draw on whiteboards" in Settings if they want AI drawing without approval, and tries it.
+
+## 2026-11-11: Landing everything on main
+- Found `main` stops at PR #4: PRs #5–#17 were each merged into the branch below them (stack
+  bases), ending in `docs/history-record`. Checked that branch has every change from all of them
+  (the only commits missing are empty merge commits) and that merging it into `main` gives exactly
+  the tested tree (404 Swift, 9 whiteboard web, 95 Docs web tests).
+- Opened one PR, `release/to-main` → `main`, for the user to merge (merge commit).
+- Next: after it's merged, fix PRs branch off `main` and target `main`; delete old stack branches
+  if the user wants.
