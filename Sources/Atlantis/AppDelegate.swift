@@ -196,11 +196,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var savedForQuit = false
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // Never lose edits on quit: save Docs first, then quit again. (Not .terminateLater: in that
+        // Never lose edits on quit: save Docs and the open board first, then quit again. (Not .terminateLater: in that
         // mode WebKit's JavaScript replies never arrive, so the save would wait forever.)
-        guard let docs = model.docsIfStarted, !savedForQuit else { return .terminateNow }
+        let docs = model.docsIfStarted, board = model.whiteboardIfStarted
+        guard docs != nil || board?.webView != nil, !savedForQuit else { return .terminateNow }
         Task {
-            await docs.flush()
+            await docs?.flush()
+            await board?.flush()
             savedForQuit = true
             sender.terminate(nil)
         }

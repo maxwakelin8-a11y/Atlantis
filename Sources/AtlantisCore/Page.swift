@@ -9,6 +9,7 @@ public enum Page: String, CaseIterable, Identifiable, Sendable {
     case subjects
     case agents
     case docs
+    case whiteboard
     case seqta
     case settings
 
@@ -23,6 +24,7 @@ public enum Page: String, CaseIterable, Identifiable, Sendable {
         case .subjects: "Subjects"
         case .agents: "Agents"
         case .docs: "Docs"
+        case .whiteboard: "Whiteboard"
         case .seqta: "SEQTA"
         case .settings: "Settings"
         }
@@ -38,6 +40,7 @@ public enum Page: String, CaseIterable, Identifiable, Sendable {
         case .subjects: "books.vertical"
         case .agents: "person.2"
         case .docs: "doc.text"
+        case .whiteboard: "scribble.variable"
         case .seqta: "graduationcap"
         case .settings: "gearshape"
         }

@@ -30,6 +30,12 @@ public struct MCPToolContext: Sendable {
     public var minRefreshInterval: TimeInterval
     /// Queues a run of another bot for `atlantis_agent_delegate` (the app's team queue). nil: not available.
     public var delegate: AgentDelegateHandler?
+    /// The Whiteboards folder. nil: no whiteboard tools work (e.g. the agent daemon's own context).
+    public var whiteboardRoot: (@Sendable () -> URL)?
+    /// Called after an agent drew on a board, so an open copy picks the change up at once.
+    public var boardChanged: @Sendable (_ path: String) async -> Void
+    /// Shows a board on the Whiteboard page. nil: not available.
+    public var openBoard: (@Sendable (_ path: String) async -> Void)?
 
     public init(vault: @escaping @Sendable () -> VaultPaths,
                 writerRoot: @escaping @Sendable () -> URL,
@@ -41,7 +47,10 @@ public struct MCPToolContext: Sendable {
                 now: @escaping @Sendable () -> Date = { Date() },
                 calendar: Calendar = .current,
                 minRefreshInterval: TimeInterval = 300,
-                delegate: AgentDelegateHandler? = nil) {
+                delegate: AgentDelegateHandler? = nil,
+                whiteboardRoot: (@Sendable () -> URL)? = nil,
+                boardChanged: @escaping @Sendable (String) async -> Void = { _ in },
+                openBoard: (@Sendable (String) async -> Void)? = nil) {
         self.vault = vault
         self.writerRoot = writerRoot
         self.cache = cache
@@ -53,6 +62,9 @@ public struct MCPToolContext: Sendable {
         self.calendar = calendar
         self.minRefreshInterval = minRefreshInterval
         self.delegate = delegate
+        self.whiteboardRoot = whiteboardRoot
+        self.boardChanged = boardChanged
+        self.openBoard = openBoard
     }
 
     var writer: WriterFiles { WriterFiles(root: writerRoot()) }
@@ -64,6 +76,7 @@ public enum GatedAction: String, CaseIterable, Sendable {
     case taskAdd = "atlantis_task_add"
     case taskUpdate = "atlantis_task_update"
     case docWrite = "atlantis_doc_write"
+    case whiteboardDraw = "atlantis_whiteboard_draw"
 
     /// The Inbox kind a not-allowed call becomes.
     public var inboxKind: String {
@@ -71,6 +84,7 @@ public enum GatedAction: String, CaseIterable, Sendable {
         case .taskAdd: "task.add"
         case .taskUpdate: "task.update"
         case .docWrite: "doc.edit"
+        case .whiteboardDraw: "whiteboard.draw"
         }
     }
 
@@ -79,6 +93,7 @@ public enum GatedAction: String, CaseIterable, Sendable {
         case .taskAdd: "Add tasks"
         case .taskUpdate: "Change, complete or move tasks"
         case .docWrite: "Create docs"
+        case .whiteboardDraw: "Draw on whiteboards"
         }
     }
 
@@ -87,6 +102,7 @@ public enum GatedAction: String, CaseIterable, Sendable {
         case .taskAdd: "Agents add a task straight to tasks.md."
         case .taskUpdate: "Agents edit, tick off or reschedule existing tasks."
         case .docWrite: "Agents create a new doc in a Writer project. Changing an existing doc always waits in the Inbox."
+        case .whiteboardDraw: "Agents create boards and add shapes, text and arrows. They never move or delete what's already there."
         }
     }
 }

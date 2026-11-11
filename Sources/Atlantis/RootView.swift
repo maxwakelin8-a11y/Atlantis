@@ -77,6 +77,7 @@ struct RootView: View {
         case .subjects: SubjectsPage(model: model)
         case .agents: AgentsPage(service: model.agents)
         case .docs: DocsPage(docs: model.docs)
+        case .whiteboard: WhiteboardPage(board: model.whiteboard)
         case .seqta: SeqtaPage(seqta: model.seqta)
         case .settings: SettingsPage(model: model)
         }

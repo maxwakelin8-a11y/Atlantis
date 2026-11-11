@@ -84,3 +84,17 @@ Reusable lessons (dated bullets).
   undo/redo with the `"history$"` meta, so a transaction's typed vs pasted text can be measured
   from its steps (`record.ts measure`). Don't launch a second Atlantis copy to test while the
   user's app is running: both use the same MCP socket path and the copy removes it at quit.
+- 2026-11-11 (Whiteboard): `npm` here fails with UNABLE_TO_GET_ISSUER_CERT_LOCALLY; run it with
+  `NODE_OPTIONS=--use-system-ca` (and outside the sandbox). Excalidraw 0.18 ships ES modules with
+  lazy chunks and `import.meta.url`: bundle it with esbuild `format: 'esm', splitting: true`, load
+  `board.js` as `type="module"`, and set `window.EXCALIDRAW_ASSET_PATH` to the bundle's own origin
+  before Excalidraw loads, or fonts come from a CDN (blocked: the web view has no network).
+- In a WKWebView whose window is covered, `requestAnimationFrame` never fires: don't gate startup
+  work on it (use a timer). Don't wrap Excalidraw in React `StrictMode`: the double mount hands
+  `excalidrawAPI` an instance that's thrown away, so `updateScene` and reads do nothing.
+- Excalidraw's `onChange` fires for scrolls, zoom and selection too. Decide "needs saving" from
+  element versions + background + file ids (`sceneKey`), taken from the restored file on open, so
+  opening a board never rewrites it.
+- Unix socket paths max out at 104 bytes: the scratchpad path is too long for `ATLANTIS_MCP_SOCKET`;
+  use a short one. A test copy with its own socket and `-whiteboardsPath <dir>` runs fine next to
+  the user's app. Two calls in one `atlantis-mcp` stdin batch run in parallel (order isn't kept).

@@ -10,6 +10,7 @@ enum InboxStyle {
         case "message.draft": "envelope"
         case "note": "note.text"
         case "doc.edit": "doc.text"
+        case "whiteboard.draw": Page.whiteboard.systemImage
         default: "tray"
         }
     }
@@ -21,6 +22,7 @@ enum InboxStyle {
         case "message.draft": "Message draft"
         case "note": "Note"
         case "doc.edit": "Doc edit"
+        case "whiteboard.draw": "Whiteboard drawing"
         case "": "Proposal"
         default: kind
         }
@@ -174,7 +176,8 @@ private struct InboxRow: View {
             VStack(alignment: .leading, spacing: Space.xs) {
                 Text(item.title).font(Typo.body)
                 HStack(spacing: Space.xs) {
-                    ForEach(Array(item.fields.enumerated()), id: \.offset) { _, field in
+                    // Long values (a doc's text, a drawing's elements) aren't pill-sized.
+                    ForEach(Array(item.fields.filter { $0.value.count <= 80 }.enumerated()), id: \.offset) { _, field in
                         Pill(text: field.value.isEmpty ? field.key : "\(field.key) \(field.value)")
                     }
                     if !item.source.isEmpty {
