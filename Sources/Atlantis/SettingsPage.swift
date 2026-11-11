@@ -145,7 +145,7 @@ private struct SeqtaSyncSection: View {
                         .foregroundStyle(.secondary)
                 }
             case .syncing:
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s) {
                     ProgressView().controlSize(.small)
                     Text("Syncing…").foregroundStyle(.secondary)
                 }

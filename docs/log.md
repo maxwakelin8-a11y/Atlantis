@@ -209,3 +209,37 @@
 - Opened one PR, `release/to-main` → `main`, for the user to merge (merge commit).
 - Next: after it's merged, fix PRs branch off `main` and target `main`; delete old stack branches
   if the user wants.
+
+## 2026-11-11: Model benchmark 2 (Writer mtime-conflict fix)
+- Same issue ("Writer saves over a doc another app changed") given to four runs, each in its own
+  worktree, fast mode off; judged blind by Opus 5.5 high.
+- Opus 5.5 medium: 2m04s, ~$0.80 API price, judge 4.0/10 (dialog can stick; edits can be lost).
+  Fable 5.2 low: 1m29s, ~$1.69, 7.0 (simplest; always keeps mine, snapshots theirs).
+  Opus 5.5 high: 3m46s, ~$1.22, 7.5 (keeps both on quit/switch; largest change).
+  Fable 5.2 medium: 2m41s, ~$1.97, 8.0 (judge's pick; snapshot first, then ask).
+- All four pass `npm test` (96 passed, 1 skipped). Nothing committed; worktrees t3-b8d58181 (Fable
+  med), t3-b1041196 (Opus high), t3-4e684bc3 (Fable low), t3-7c6cdf9a (Opus med).
+- Next: user picks; judge suggests Fable-medium's fix plus a snapshot-on-quit while a conflict is
+  pending and reading mtime after the file in `store.save`.
+- Round 2: added Opus 5.5 xhigh (12m37s, ~$2.37, worktree t3-fb3e2699) and Fable 5.2 high
+  (11m17s, ~$3.25, t3-dbeaf3a6). One blind judge (Opus 5.5 high, fast) re-scored all six:
+  Opus xhigh 8.5 (judge's pick: only one that serializes saves), Fable high 8.0, Opus high 6.3,
+  Fable med 6.2, Fable low 5.9, Opus med 4.3. Same fixes scored differently by the two judges
+  (e.g. Fable med 8.0 → 6.2), so ±1–2 points is noise.
+
+## 2026-11-11: Whiteboard missing from the app + first small fixes
+- "Whiteboard isn't in the app": the installed app was built 39 minutes before the Whiteboard
+  commit, so it had no Whiteboard page and no `Resources/Whiteboard`. Code and build script were
+  fine. Rebuilt and installed from `main` + these fixes (`scripts/build-app.sh --install`).
+- Quick check done by Haiku 5.5 helpers (one diagnosed, one audited read-only, two fixed), reviewed
+  on the main thread. Fixed on `fix/small-bugs-1`:
+  - Inbox: a message draft could be "accepted" (Return key, context menu, or the always-allow
+    list) and went to Done without being sent. Drafts now only open in Messages.
+  - Whiteboard: the web-process-crash handler had the wrong method name, so it never ran.
+  - Today: each visit started another `plan.json` observer; now it starts once.
+  - SEQTA file cache: the file id is checked to be a UUID before a path is built from it.
+  - Three raw numbers moved to tokens; unused `PlaceholderPage` removed.
+- Five more findings went to `docs/issues.md` (not fixed). Tests: 408 Swift, 9 whiteboard web,
+  95 Docs web pass. Not live-tested: the Whiteboard crash reload.
+- Not audited yet: Agents pages, most of SeqtaSync, DocsPage, Tasks views, MCP folder.
+- Next: user tries the Whiteboard (⌘8) and keeps listing problems in `docs/issues.md`.

@@ -111,10 +111,15 @@ public struct SeqtaFileRequest: Sendable, Equatable {
     public let source: Source
     public let uuid: String
 
+    /// True for a real UUID (any case). The check for any id that goes into a path or a URL.
+    public static func isUUID(_ text: String) -> Bool {
+        text.range(of: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#,
+                   options: .regularExpression) != nil
+    }
+
     /// Nil unless `uuid` is a real UUID (so nothing else can be smuggled into the path).
     public init?(source: Source, uuid: String) {
-        guard uuid.range(of: #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#,
-                         options: .regularExpression) != nil else { return nil }
+        guard Self.isUUID(uuid) else { return nil }
         self.source = source
         self.uuid = uuid.lowercased()
     }

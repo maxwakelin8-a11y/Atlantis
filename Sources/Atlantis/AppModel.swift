@@ -48,6 +48,8 @@ final class AppModel {
 
     /// Created the first time Messages is shown or something opens a draft in it.
     @ObservationIgnored private var messagesStorage: MessagesModel?
+    /// True once the `plan.json` observation chain has started (it never stops).
+    @ObservationIgnored private var planObserving = false
 
     var messages: MessagesModel {
         if let messagesStorage { return messagesStorage }
@@ -190,10 +192,13 @@ final class AppModel {
 
     // MARK: Today wiring
 
-    /// Starts Today's stores and keeps `plan.json` current. Called once, after the first frame.
+    /// Starts Today's stores and keeps `plan.json` current. Safe to call again (launch, each Today
+    /// appearance, debug): the stores ignore repeat starts and the plan observation starts only once.
     func startToday() {
         today.start()
         tasks.start()
+        guard !planObserving else { return }
+        planObserving = true
         writePlanAndObserve()
     }
 

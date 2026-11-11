@@ -101,8 +101,8 @@ final class InboxStore {
         onStates(Dictionary(items.map { ($0.id, $0.state) }, uniquingKeysWith: { _, last in last }))
     }
 
-    /// Adds a proposal. If its kind is on the always-allow list it's accepted straight away,
-    /// except a bot's: a bot's autonomy decides what it may do (PRD §7b), not this list.
+    /// Adds a proposal. If its kind is on the always-allow list it's accepted straight away
+    /// (`InboxItem.isAutoAccepted`: never a draft, never a bot's).
     @discardableResult
     func post(_ item: InboxItem) async throws -> InboxItem {
         var item = item
@@ -112,7 +112,7 @@ final class InboxStore {
             file.append(item)
             return true
         }
-        if isAllowed(kind: item.kind), !item.source.hasPrefix("agent:") {
+        if item.isAutoAccepted(allowedKinds: allowedKinds) {
             do { try await accept(id: item.id) } catch {
                 lastError = "Couldn't accept \(item.title): \(error.localizedDescription)"
             }
@@ -148,7 +148,8 @@ final class InboxStore {
     }
 
     func setAllowed(_ allowed: Bool, kind: String) {
-        guard !kind.isEmpty else { return }
+        // A draft is only ever opened in Messages, so it can't be allowed.
+        guard !kind.isEmpty, kind != "message.draft" else { return }
         var kinds = allowedKinds.filter { $0 != kind }
         if allowed { kinds.append(kind) }
         allowedKinds = kinds

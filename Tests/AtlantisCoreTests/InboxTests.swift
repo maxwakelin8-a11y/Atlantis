@@ -297,4 +297,24 @@ import Testing
         #expect(reread.items.map(\.title) == ["On disk"])
         #expect(try TextFile.write(reread.text, to: target) == false) // byte-identical, no write
     }
+
+    // MARK: Always allow
+
+    @Test func allowedKindIsAutoAcceptedOnPost() {
+        let item = InboxItem(kind: "task.add", title: "Essay", source: "mcp:claude-code")
+        #expect(item.isAutoAccepted(allowedKinds: ["task.add"]))
+        #expect(!item.isAutoAccepted(allowedKinds: ["note"]))
+    }
+
+    @Test func messageDraftStaysPendingEvenWhenItsKindIsAllowed() {
+        let plain = InboxItem(kind: "message.draft", title: "Draft to Ms Example", source: "mcp:claude-code")
+        let fromBot = InboxItem(kind: "message.draft", title: "Draft to Ms Example", source: "agent:school")
+        #expect(!plain.isAutoAccepted(allowedKinds: ["message.draft"]))
+        #expect(!fromBot.isAutoAccepted(allowedKinds: ["message.draft"]))
+    }
+
+    @Test func botItemsAreNotAutoAccepted() {
+        let item = InboxItem(kind: "task.add", title: "Essay", source: "agent:school")
+        #expect(!item.isAutoAccepted(allowedKinds: ["task.add"]))
+    }
 }

@@ -108,14 +108,17 @@ public struct SeqtaFileCache: Sendable {
         root.appendingPathComponent(uuid.lowercased(), isDirectory: true).appendingPathComponent(Self.safeName(name))
     }
 
-    /// The downloaded file, if it's already here.
+    /// The downloaded file, if it's already here. Nil for an id that isn't a UUID.
     public func existing(uuid: String, name: String) -> URL? {
+        guard SeqtaFileRequest.isUUID(uuid) else { return nil }
         let url = url(uuid: uuid, name: name)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// Throws for an id that isn't a UUID, before anything is written.
     @discardableResult
     public func store(_ data: Data, uuid: String, name: String) throws -> URL {
+        guard SeqtaFileRequest.isUUID(uuid) else { throw SeqtaSyncError.badResponse("file id") }
         let url = url(uuid: uuid, name: name)
         for dir in [root, url.deletingLastPathComponent()] {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
