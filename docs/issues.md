@@ -8,7 +8,7 @@ Format: `- [ ] [bug|polish|perf] what happened · where · YYYY-MM-DD`
 
 - [ ] [bug] Files with old Mac line endings (CR only) don't survive the block splice; safe today because unedited docs are never written · Docs · 2026-11-06
 - [ ] [bug] The Writer saves over a doc that another app changed while it was open (it reloads changes only when the page becomes visible); add an mtime check to `store.save` · Docs · 2026-11-07
-- [ ] [polish] Writer features that need Claude (spelling & grammar, reference from a link) or SEQTA ("From a SEQTA assessment") show "comes later" messages · Docs · 2026-11-07
+- [ ] [polish] Writer features that need Claude (reference from a link) or SEQTA ("From a SEQTA assessment") show "comes later" messages · Docs · 2026-11-07
 - [ ] [perf] PDF export runs headless Helium/Chrome (as the BetterSEQTA+ Writer did; WebKit can't print page numbers); background networking is switched off with flags · Docs · 2026-11-07
 - [ ] [polish] vitest (dev only) still has npm audit advisories (tinypool, @vitest/mocker); fix needs vitest 5 · Docs build · 2026-11-07
 - [ ] [polish] Mermaid/WaveDrom diagrams show as code (renderers not bundled) · Docs · 2026-11-06
@@ -42,6 +42,8 @@ Format: `- [ ] [bug|polish|perf] what happened · where · YYYY-MM-DD`
 - [ ] [bug] The SEQTA tab builds its own `WKWebViewConfiguration` instead of `WebViews.configuration(network: .open)`, against the "every web view through WebViews" rule · SEQTA · 2026-11-11
 
 ## Fixed
+
+- [x] [polish] Spelling & grammar only worked through WebKit (marks near the caret, click only) → the Mac's checker over the whole doc, always on, fixes on hover; Docs layout now Google Docs-like · Docs · 2026-11-14
 
 - [x] [bug] Docs editor text and menus were in Chinese (GenOffice defaults to zh) → English now · Docs · 2026-11-07
 - [x] [polish] Docs had no toolbar, slash or table menus → it's the Writer now (format bar, "/" menu, table menu) · Docs · 2026-11-07

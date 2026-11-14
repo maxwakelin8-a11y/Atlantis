@@ -134,9 +134,12 @@ format bar, find/replace, "/" menu, comments, snapshots, templates, word targets
 export to Word/PDF/RTF/ODT/HTML/Markdown) is copied into Atlantis as the Docs page
 (`web/docs-editor/src/writer`, MIT). Its text editing runs on GenOffice's lossless editor below,
 so unchanged text stays byte-identical. It uses the same folder as the BetterSEQTA+ Writer, so
-existing projects open in both. Writer features that need Claude (spelling & grammar checks,
-reading a web page for a reference) and SEQTA (start from an assessment) are switched off until
-Atlantis has its Claude client and SEQTA cache.
+existing projects open in both. Writer features that need Claude (reading a web page for a
+reference) and SEQTA (start from an assessment) are switched off until Atlantis has its Claude
+client and SEQTA cache. Spelling & grammar checks (changed 2026-11-14) run on the Mac's own checker
+(NSSpellChecker, the Mac's language), always on, Google Docs-style: red/blue squiggles over the whole
+doc, fixes on hover. The Docs layout follows Google Docs too: pale canvas, pill toolbar, white page,
+no inspector until opened.
 
 **Editor engine:** a copied, fixed snapshot of GenOffice's `apps/markdown` renderer (Tiptap/ProseMirror),
 with the upstream commit recorded in `docs/findings.md`. Features worth having from GenOffice's
@@ -285,6 +288,8 @@ moves to where it belongs, and your AI can read all of it.
 - iPhone app and widgets (home screen, lock screen, watch); App Intents and Shortcuts
 - Habits and streaks; priority matrix view; weekly review
 - Amy nutrition beside BJJ training; Gmail to tasks; exam revision with spaced repetition
+- Docs: a deeper Claude grammar & style pass on top of the Mac's spelling check (macOS grammar
+  only catches simple mistakes such as doubled words or "they was")
 
 ## 8. MCP tools (v1)
 

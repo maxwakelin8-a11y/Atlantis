@@ -79,6 +79,8 @@ export type WriterEditorOptions = {
   /** Spelling & grammar marks: on/off and the cached issues for a paragraph's text. */
   proof?: () => boolean;
   proofLookup?: (text: string) => ProofIssue[] | undefined;
+  /** False for an issue dismissed or added to the dictionary since it was marked. */
+  proofShown?: (issue: ProofIssue) => boolean;
 };
 
 const sessions = new WeakMap<Editor, DocSession>();
@@ -97,7 +99,7 @@ export function createEditor(opts: WriterEditorOptions): Editor {
       FocusBlock,
       CommentHighlight.configure({ get: opts.comments ?? (() => []), active: opts.activeComment ?? (() => null) }),
       ReviewMarks.configure({ enabled: opts.review ?? (() => false) }),
-      ProofMarks.configure({ enabled: opts.proof ?? (() => false), lookup: opts.proofLookup ?? (() => undefined) }),
+      ProofMarks.configure({ enabled: opts.proof ?? (() => false), lookup: opts.proofLookup ?? (() => undefined), shown: opts.proofShown ?? (() => true) }),
     ],
     content: "",
     editorProps: {

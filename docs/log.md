@@ -243,3 +243,19 @@
   95 Docs web pass. Not live-tested: the Whiteboard crash reload.
 - Not audited yet: Agents pages, most of SeqtaSync, DocsPage, Tasks views, MCP folder.
 - Next: user tries the Whiteboard (⌘8) and keeps listing problems in `docs/issues.md`.
+
+## 2026-11-14: Docs spelling & grammar, Google Docs-like layout
+- User asked: spell checker that works all the time, faster, with a hover cue (not only click);
+  and a cleaner, Google Docs-like Docs UI.
+- Spelling & grammar now use the Mac's own checker: new Swift `SpellCheck` (NSSpellChecker) behind a
+  `spell.check` bridge op (text only, no files, no network). Always on (saved prefs migrate once),
+  whole doc checked on open, ~0.45 s after you pause; a half-typed word waits until it's finished.
+  Red wavy = spelling, blue = grammar; hovering tints the word and opens a card with the fix and up
+  to 3 alternatives (Ignore / Add to dictionary). Marks in an edited paragraph stay until re-checked;
+  only the word you touch loses its mark.
+- Layout: pale canvas, rounded pill toolbar, white page with a soft shadow, pill outline rows,
+  pill Export button, no divider lines; inspector hidden by default (⌥⌘I opens it); home tiles white.
+- Checks: 102 web tests (new: offsets, alternatives, marks kept while editing, prefs migration),
+  408 Swift tests. Live in a debug copy on temp folders: 5 marks on open, hover card with
+  alternatives, file unchanged. Found and fixed a prefs-migration bug (defaults hid old prefs).
+- Next: user tries it in the real app (needs `scripts/build-app.sh --install` and a relaunch).

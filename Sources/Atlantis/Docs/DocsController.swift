@@ -113,6 +113,14 @@ final class DocsController: NSObject, WKScriptMessageHandlerWithReply {
             } catch let failure as ToolFailure {
                 throw DocsBridgeError(message: failure.message)
             }
+        case "spell.check":
+            // Text only, checked on this Mac by NSSpellChecker; no files, no network.
+            let raw = body["paragraphs"] as? [[String: Any]] ?? []
+            let paragraphs = raw.compactMap { p -> (id: String, text: String)? in
+                guard let id = p["id"] as? String, let text = p["text"] as? String else { return nil }
+                return (id, text)
+            }
+            return ["results": await SpellCheck.check(paragraphs)]
         case "open":
             let url = try files.resolve(str("path"))
             if body["reveal"] as? Bool == true {
