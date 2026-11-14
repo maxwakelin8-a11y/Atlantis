@@ -29,6 +29,14 @@
   --wr-accent-fg: #fff;
   --wr-accent-soft: color-mix(in srgb, var(--wr-accent) 18%, transparent);
   --wr-danger: #e5484d;
+  --wr-spell: #e5484d;
+  --wr-grammar: #3b82f6;
+  /* Google Docs-style chrome (Atlantis 2026-11-14): a pale canvas around a white page, a pill toolbar. */
+  --wr-canvas: color-mix(in srgb, var(--wr-accent) 3%, var(--wr-panel));
+  --wr-pill: color-mix(in srgb, var(--wr-accent) 8%, var(--wr-panel));
+  --wr-select-bg: color-mix(in srgb, var(--wr-accent) 17%, var(--wr-panel));
+  --wr-page-shadow: 0 1px 3px 1px color-mix(in srgb, var(--wr-fg) 8%, transparent), 0 1px 2px color-mix(in srgb, var(--wr-fg) 16%, transparent);
+  --wr-pill-radius: 999px;
   --wr-ok: #30a46c;
   --wr-radius: 8px;
   --wr-zoom: 1;
@@ -1249,11 +1257,13 @@
 #bsplus-writer .wr-field.is-ai input { border-color: color-mix(in srgb, var(--wr-accent, #6b5cff) 45%, transparent); }
 
 /* ── spelling & grammar (proofread.ts) ── */
-#bsplus-writer .wr-pf { text-decoration-line: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; text-decoration-skip-ink: none; cursor: pointer; border-radius: 2px; transition: background 0.12s; }
-#bsplus-writer .wr-pf-fix { text-decoration-color: var(--wr-danger); }
-#bsplus-writer .wr-pf-soft { text-decoration-color: #3b82f6; text-decoration-style: dotted; text-decoration-thickness: 2.5px; }
-#bsplus-writer .wr-pf-fix:hover { background: color-mix(in srgb, var(--wr-danger) 14%, transparent); }
-#bsplus-writer .wr-pf-soft:hover { background: color-mix(in srgb, #3b82f6 12%, transparent); }
+/* Google Docs-style squiggles: red for spelling, blue for grammar. Hovering tints the word and opens its card. */
+#bsplus-writer .wr-pf { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-thickness: 1.5px; text-underline-offset: 3px; text-decoration-skip-ink: none; cursor: pointer; border-radius: 3px; transition: background 0.12s, box-shadow 0.12s; }
+#bsplus-writer .wr-pf-spell { text-decoration-color: var(--wr-spell); }
+#bsplus-writer .wr-pf-fix { text-decoration-color: var(--wr-grammar); }
+#bsplus-writer .wr-pf-soft { text-decoration-color: var(--wr-grammar); text-decoration-style: dotted; text-decoration-thickness: 2px; }
+#bsplus-writer .wr-pf-spell:hover { background: color-mix(in srgb, var(--wr-spell) 14%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--wr-spell) 14%, transparent); }
+#bsplus-writer :is(.wr-pf-fix, .wr-pf-soft):hover { background: color-mix(in srgb, var(--wr-grammar) 13%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--wr-grammar) 13%, transparent); }
 #bsplus-writer .wr-pf-chip { height: 22px; padding: 0 9px; margin-left: 6px; border-radius: 999px; font-size: 12px; color: var(--wr-muted); display: inline-flex; align-items: center; gap: 6px; }
 #bsplus-writer .wr-pf-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--wr-ok); }
 #bsplus-writer .wr-pf-chip:hover { background: var(--wr-accent-soft); color: var(--wr-fg); }
@@ -1265,18 +1275,21 @@
 #bsplus-writer .wr-pf-chip.is-error::before { background: var(--wr-danger); }
 @keyframes wr-pf-pulse { from { opacity: 0.35; } to { opacity: 1; } }
 
-#bsplus-writer .wr-pf-card { width: 300px; padding: 12px 14px; }
+#bsplus-writer .wr-pf-card { width: auto; min-width: 220px; max-width: 320px; padding: 12px 14px; animation: wr-pf-in 0.12s ease-out; }
+@keyframes wr-pf-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 #bsplus-writer .wr-pf-body { display: grid; gap: 8px; }
 #bsplus-writer .wr-pf-kind { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--wr-muted); }
-#bsplus-writer .wr-pf-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--wr-danger); }
-#bsplus-writer .wr-pf-dot.is-soft { background: #3b82f6; }
+#bsplus-writer .wr-pf-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--wr-grammar); }
+#bsplus-writer .wr-pf-dot.is-spell { background: var(--wr-spell); }
 #bsplus-writer .wr-pf-swap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #bsplus-writer .wr-pf-old { color: var(--wr-muted); text-decoration-color: var(--wr-danger); }
 #bsplus-writer .wr-pf-try { display: grid; gap: 4px; }
-#bsplus-writer .wr-pf-fixbtn { padding: 4px 10px; border-radius: 7px; background: var(--wr-ok); color: #fff; font-weight: 600; text-align: left; line-height: 1.4; }
-#bsplus-writer .wr-pf-fixbtn:hover, #bsplus-writer .wr-pf-fixbtn:focus-visible { background: color-mix(in srgb, var(--wr-ok) 85%, #000); outline: none; }
-#bsplus-writer .wr-pf-fixbtn.is-long { font-weight: 500; background: color-mix(in srgb, #3b82f6 14%, transparent); color: var(--wr-fg); border: 1px solid color-mix(in srgb, #3b82f6 40%, transparent); }
-#bsplus-writer .wr-pf-fixbtn.is-long:hover { background: color-mix(in srgb, #3b82f6 24%, transparent); }
+#bsplus-writer .wr-pf-fixbtn { padding: 4px 12px; border-radius: 999px; background: var(--wr-accent); color: var(--wr-accent-fg); font-weight: 600; text-align: left; line-height: 1.4; transition: background 0.12s; }
+#bsplus-writer .wr-pf-fixbtn:hover, #bsplus-writer .wr-pf-fixbtn:focus-visible { background: color-mix(in srgb, var(--wr-accent) 85%, var(--wr-fg)); outline: none; }
+#bsplus-writer .wr-pf-fixbtn.is-alt { background: var(--wr-accent-soft); color: var(--wr-fg); font-weight: 500; }
+#bsplus-writer .wr-pf-fixbtn.is-alt:hover, #bsplus-writer .wr-pf-fixbtn.is-alt:focus-visible { background: color-mix(in srgb, var(--wr-accent) 28%, transparent); }
+#bsplus-writer .wr-pf-fixbtn.is-long { font-weight: 500; background: color-mix(in srgb, var(--wr-grammar) 14%, transparent); color: var(--wr-fg); border: 1px solid color-mix(in srgb, var(--wr-grammar) 40%, transparent); border-radius: 8px; }
+#bsplus-writer .wr-pf-fixbtn.is-long:hover { background: color-mix(in srgb, var(--wr-grammar) 24%, transparent); }
 #bsplus-writer .wr-pf-note { margin: 0; line-height: 1.45; }
 #bsplus-writer .wr-pf-acts { display: flex; gap: 14px; }
 
@@ -1352,3 +1365,49 @@
 #bsplus-writer .wr-rec blockquote { margin: 3px 0 0; padding: 6px 10px; border-left: 3px solid var(--wr-border); background: var(--wr-card); white-space: pre-wrap; font-size: 12.5px; border-radius: 0 6px 6px 0; }
 #bsplus-writer .wr-rec .rec-events { padding-left: 18px; margin: 0; font-size: 12.5px; }
 #bsplus-writer .wr-rec .rec-foot { margin-top: 18px; }
+
+/* ══ Atlantis 2026-11-14: a cleaner, Google Docs-like layout ══
+   One pale canvas behind everything, no dividing lines, a rounded pill toolbar, a white page with a
+   soft shadow, quiet outline rows, and a pill "Export" button. Later rules override earlier runs. */
+#bsplus-writer { background: var(--wr-canvas); }
+#bsplus-writer .wr-top { background: var(--wr-canvas); border-bottom: 0; padding: 8px 14px 4px; gap: 8px; }
+#bsplus-writer .wr-top-group { background: transparent; padding: 0; gap: 0; }
+#bsplus-writer .wr-top .wr-icon-btn { border-radius: var(--wr-pill-radius); }
+#bsplus-writer .wr-top-title { background: transparent; }
+#bsplus-writer .wr-path { justify-content: flex-start; padding-right: 0; }
+#bsplus-writer .wr-proj-btn { font-size: 17px; font-weight: 500; height: 34px; padding: 0 10px; border-radius: 8px; max-width: 280px; }
+#bsplus-writer .wr-view-btn { border-radius: var(--wr-pill-radius); height: 32px; padding: 0 12px; }
+#bsplus-writer .wr-view-btn.is-on { background: var(--wr-select-bg); box-shadow: none; }
+#bsplus-writer .wr-export-btn { height: 36px; padding: 0 18px; margin-left: 6px; border-radius: var(--wr-pill-radius); border: 0; background: var(--wr-select-bg); color: var(--wr-fg); font-weight: 600; }
+#bsplus-writer .wr-export-btn:hover { background: color-mix(in srgb, var(--wr-accent) 26%, var(--wr-panel)); }
+#bsplus-writer .wr-export-btn > span:first-child { color: var(--wr-accent); }
+
+#bsplus-writer .wr-format { margin: 2px 14px 8px; padding: 4px 10px; border: 0; border-radius: var(--wr-pill-radius); background: var(--wr-pill); min-height: 40px; }
+#bsplus-writer .wr-format .wr-icon-btn { border-radius: 6px; color: color-mix(in srgb, var(--wr-fg) 75%, transparent); }
+#bsplus-writer .wr-format .wr-icon-btn:hover { background: color-mix(in srgb, var(--wr-fg) 8%, transparent); color: var(--wr-fg); }
+#bsplus-writer .wr-format .wr-style { border-color: transparent; background-color: transparent; }
+#bsplus-writer .wr-format .wr-style:hover { background-color: color-mix(in srgb, var(--wr-fg) 8%, transparent); }
+
+#bsplus-writer .wr-body { background: var(--wr-canvas); }
+#bsplus-writer .wr-binder { background: var(--wr-canvas); border-right: 0; }
+#bsplus-writer .wr-search { border: 0; border-radius: var(--wr-pill-radius); background: var(--wr-pill); padding: 0 14px; margin: 4px 10px 8px; }
+#bsplus-writer .wr-tree { padding: 0 10px 16px; }
+#bsplus-writer .wr-row { height: 32px; border-radius: var(--wr-pill-radius); padding-left: calc(8px + var(--depth, 0) * 16px); }
+#bsplus-writer .wr-row:hover { background: color-mix(in srgb, var(--wr-fg) 6%, transparent); }
+#bsplus-writer .wr-row.is-selected { background: var(--wr-select-bg); color: var(--wr-fg); font-weight: 500; }
+#bsplus-writer .wr-row.is-selected .wr-row-icon { color: var(--wr-accent); }
+#bsplus-writer .wr-row.is-selected .wr-twisty { color: var(--wr-muted); }
+#bsplus-writer .wr-inspector { background: var(--wr-canvas); border-left: 0; }
+
+#bsplus-writer .wr-scroll.view-doc { background: var(--wr-canvas); padding-top: 12px; }
+#bsplus-writer.paper-page .wr-paper { border-radius: 0; box-shadow: var(--wr-page-shadow); }
+#bsplus-writer .wr-crumbs { border-bottom: 0; }
+
+#bsplus-writer .wr-foot { background: var(--wr-canvas); border-top: 0; height: 30px; color: var(--wr-faint); }
+#bsplus-writer .wr-foot .wr-words { font-weight: 500; color: var(--wr-muted); }
+/* Home: white tiles on the canvas, like Google Docs' recent documents. */
+#bsplus-writer .wr-proj-card:not(.wr-proj-new) { background: var(--wr-solid); border-color: transparent; box-shadow: var(--wr-page-shadow); }
+#bsplus-writer .wr-proj-card:not(.wr-proj-new):hover { border-color: color-mix(in srgb, var(--wr-accent) 55%, transparent); }
+#bsplus-writer .wr-proj-new { background: transparent; }
+#bsplus-writer .wr-home-actions .wr-btn { border-radius: var(--wr-pill-radius); border: 0; background: var(--wr-pill); padding: 0 16px; }
+#bsplus-writer .wr-home-actions .wr-btn:hover { background: var(--wr-select-bg); }

@@ -143,9 +143,9 @@ export const writerApi = {
   cite: async (_url: string, _ai = true): Promise<Reference & { aiFields?: string[]; via?: string }> => {
     throw new Error(`Reading a web page for a reference: ${LATER} For now, fill in the fields yourself.`);
   },
-  proofread: async (_paragraphs: Array<{ id: string; text: string }>): Promise<{ results: Record<string, ProofIssue[]> }> => {
-    throw new Error(LATER);
-  },
+  /** Atlantis: spelling & grammar by the Mac's own checker (Swift, NSSpellChecker); nothing leaves the Mac. */
+  proofread: (paragraphs: Array<{ id: string; text: string }>) =>
+    call<{ results: Record<string, ProofIssue[]> }>("spell.check", { paragraphs }),
   /** Atlantis: search every project's documents (Swift reads the files; nothing is indexed). */
   search: (query: string, limit = 200) => call<SearchResult>("fs.search", { query, limit }),
   convert: (name: string, data: string) => st().convert({ name, data }) as Promise<{ markdown?: string; html?: string }>,

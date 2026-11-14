@@ -84,15 +84,89 @@ describe("Proofreader", () => {
     ed.destroy();
   });
 
-  it("waits for the paragraph being typed to finish its sentence", () => {
+  it("waits while a word is half typed, then checks once the word is finished", () => {
     const pr = new Proofreader(async () => ({ results: {} }), () => {});
     const el = document.createElement("div");
-    const ed = createEditor({ element: el, markdown: "The causes of the war were many and complicated and", onChange: () => {} });
-    pr.scan([ed.state.doc], ed.state.doc.firstChild!.textContent);
+    const typed = "The causes of the war were many and complicat";
+    const ed = createEditor({ element: el, markdown: typed, onChange: () => {} });
+    expect(pr.scan([ed.state.doc], { text: typed, before: typed.length })).toBe(true);
     expect(pr.pending).toBe(0);
+    // Caret after a space (or anywhere not right after a letter): checked.
+    expect(pr.scan([ed.state.doc], { text: typed, before: 4 })).toBe(false);
+    expect(pr.pending).toBe(1);
+    pr.stop();
     pr.scan([ed.state.doc], null);
     expect(pr.pending).toBe(1);
     pr.stop();
+    ed.destroy();
+  });
+
+  it("places issues by offset, so a repeated word marks the right one", () => {
+    const text = "I went to the shop to buy to many apples today.";
+    const issue: ProofIssue = { kind: "grammar", quote: "to", fix: "too", note: "", at: 26 };
+    const el = document.createElement("div");
+    const ed = createEditor({ element: el, markdown: text, onChange: () => {}, proof: () => true, proofLookup: (t) => (t === text ? [issue] : undefined) });
+    ed.view.dispatch(ed.state.tr.setMeta(proofKey, true));
+    const [hit] = hitsIn(ed.view);
+    expect(hit.at).toBe(26);
+    expect(ed.state.doc.textBetween(1, hit.from) + "|").toBe("I went to the shop to buy |");
+    expect(applyToText(text, issue)).toBe("I went to the shop to buy too many apples today.");
+    ed.destroy();
+  });
+
+  it("an accepted alternative moves the later issues along", () => {
+    const text = "Teh cat sat on teh mat and slept.";
+    const issues: ProofIssue[] = [
+      { kind: "spelling", quote: "Teh", fix: "The", note: "", at: 0, alts: ["Ten"] },
+      { kind: "spelling", quote: "teh", fix: "the", note: "", at: 15 },
+    ];
+    const pr = new Proofreader(async () => ({ results: { "0": issues } }), () => {});
+    (pr as unknown as { cache: Map<string, ProofIssue[]> }).cache.set(textKey(text), issues);
+    pr.accepted(text, issues[0], "Tense");
+    const next = "Tense cat sat on teh mat and slept.";
+    expect(pr.lookup(next)).toEqual([{ ...issues[1], at: 17 }]);
+  });
+
+  it("keeps a paragraph's other marks while it's edited, but drops the one being changed", () => {
+    const text = "Imperialism was a big cause becuase the countrys wanted land.";
+    let known = new Map<string, ProofIssue[]>([[text, ISSUES]]);
+    const hidden = new Set<string>();
+    const el = document.createElement("div");
+    const ed = createEditor({ element: el, markdown: text, onChange: () => {}, proof: () => true, proofLookup: (t) => known.get(t), proofShown: (i) => !hidden.has(i.quote) });
+    ed.view.dispatch(ed.state.tr.setMeta(proofKey, true));
+    expect(hitsIn(ed.view).map((x) => x.quote)).toEqual(["becuase", "countrys"]);
+    // Type at the end: the paragraph isn't checked yet, both marks stay.
+    ed.view.dispatch(ed.state.tr.insertText(" Then", ed.state.doc.content.size - 1));
+    expect(hitsIn(ed.view).map((x) => x.quote)).toEqual(["becuase", "countrys"]);
+    // Edit inside "countrys": that mark goes, the other stays.
+    const c = hitsIn(ed.view)[1];
+    ed.view.dispatch(ed.state.tr.insertText("ie", c.to - 1, c.to));
+    expect(hitsIn(ed.view).map((x) => x.quote)).toEqual(["becuase"]);
+    // New results for other paragraphs (a full redo) keep this unchecked paragraph's mark…
+    ed.view.dispatch(ed.state.tr.setMeta(proofKey, true));
+    expect(hitsIn(ed.view).map((x) => x.quote)).toEqual(["becuase"]);
+    // …unless it's been dismissed since.
+    hidden.add("becuase");
+    ed.view.dispatch(ed.state.tr.setMeta(proofKey, true));
+    expect(hitsIn(ed.view)).toHaveLength(0);
+    hidden.clear();
+    // Text that's been checked takes its marks from the cache again.
+    known = new Map([[`${ed.state.doc.firstChild!.textContent}!`, []]]);
+    ed.view.dispatch(ed.state.tr.insertText("!", ed.state.doc.content.size - 1));
+    expect(hitsIn(ed.view)).toHaveLength(0);
+    ed.destroy();
+  });
+
+  it("a space after a marked word keeps its mark; a letter next to it removes it", () => {
+    const text = "Imperialism was a big cause becuase the countrys wanted land.";
+    const el = document.createElement("div");
+    const ed = createEditor({ element: el, markdown: text, onChange: () => {}, proof: () => true, proofLookup: (t) => (t === text ? ISSUES : undefined) });
+    ed.view.dispatch(ed.state.tr.setMeta(proofKey, true));
+    const [b] = hitsIn(ed.view);
+    ed.view.dispatch(ed.state.tr.insertText(" ", b.to));
+    expect(hitsIn(ed.view).map((x) => x.quote)).toEqual(["becuase", "countrys"]);
+    ed.view.dispatch(ed.state.tr.insertText("x", b.from));
+    expect(hitsIn(ed.view).map((x) => x.quote)).toEqual(["countrys"]);
     ed.destroy();
   });
 

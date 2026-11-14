@@ -109,3 +109,19 @@ Reusable lessons (dated bullets).
 - `~/Applications/Atlantis.app` only changes when `scripts/build-app.sh --install` runs. Before
   debugging a missing feature, compare the installed binary's date with the feature's commit and
   `strings` the binary for it. After landing a feature, install it (and relaunch) as part of the work.
+
+## 2026-11-14 (Docs spelling, Google Docs layout)
+- `NSSpellChecker.requestChecking` (spelling + grammar) is fast: ~50 ms for a few paragraphs warm,
+  ~250–650 ms on the first call. It follows the Mac's language (en_AU: "colour", "realise" pass),
+  and its ranges are UTF-16, the same as JavaScript string offsets. Grammar is basic: doubled words,
+  its/it's, "they was"; it misses "He go".
+- ProseMirror `DecorationSet.remove(list)` sets the entries of `list` to null. Pass a copy if you
+  still need them (e.g. `set.remove(stale.slice())`).
+- Prefs migrations: check the *saved* object for the version key, not `{...DEFAULTS, ...saved}`;
+  when the defaults carry the current version, the merge hides old prefs and nothing migrates.
+- The debug binary's Docs web store (`~/Library/WebKit/Atlantis`) is shared by every test copy run
+  from any checkout, so saved Writer prefs can come from another session. The page also saves prefs
+  on its own, so a probe's `localStorage` edits can be overwritten; reload the page right after.
+- Mock-bridge screenshots of the Docs page: bundle a tiny harness that installs
+  `window.webkit.messageHandlers.writer` over `memoryFS`, load it before `editor.js`, and run
+  Helium headless (`--screenshot`, `--blink-settings=preferredColorScheme=0|1`).

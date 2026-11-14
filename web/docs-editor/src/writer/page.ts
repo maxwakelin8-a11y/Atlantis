@@ -88,6 +88,8 @@ type InspectorTab = "info" | "contents" | "comments" | "history";
 type Prefs = {
   binder: boolean;
   inspector: boolean;
+  /** Which Atlantis prefs changes have been applied (see PREFS_VERSION). */
+  atlantisPrefs?: number;
   zoom: number;
   font: "serif" | "sans" | "mono";
   paper: "page" | "theme";
@@ -97,7 +99,7 @@ type Prefs = {
   inspectorTab: InspectorTab;
   focusLine: boolean;
   review: boolean;
-  /** Spelling & grammar checks as you write (Claude Haiku via seqta-mcp). */
+  /** Spelling & grammar checks as you write (the Mac's own checker, via Swift). */
   proof: boolean;
   tipsSeen: boolean;
   /** Words in the Draft at the start of each day, per project (for "+N today"). */
@@ -109,9 +111,16 @@ type Prefs = {
   expanded: Record<string, string[]>;
 };
 
+/**
+ * Atlantis 2026-11-14: spelling & grammar became local and always on, and the layout became
+ * Google Docs-like (no inspector until you open it). Saved prefs from before get those once.
+ */
+const PREFS_VERSION = 2;
+
 const DEFAULT_PREFS: Prefs = {
+  atlantisPrefs: PREFS_VERSION,
   binder: true,
-  inspector: true,
+  inspector: false,
   zoom: 1,
   font: "sans",
   paper: "page",
@@ -121,7 +130,7 @@ const DEFAULT_PREFS: Prefs = {
   inspectorTab: "info",
   focusLine: true,
   review: false,
-  proof: false,
+  proof: true,
   tipsSeen: false,
   today: {},
   autoSnap: {},
@@ -130,10 +139,14 @@ const DEFAULT_PREFS: Prefs = {
   expanded: {},
 };
 
-function loadPrefs(): Prefs {
+export function loadPrefs(): Prefs {
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
-    return { ...DEFAULT_PREFS, ...(raw && typeof raw === "object" ? raw : {}) };
+    const saved: Partial<Prefs> = raw && typeof raw === "object" ? raw : {};
+    const prefs: Prefs = { ...DEFAULT_PREFS, ...saved };
+    // Look at what was saved, not the merge: the defaults already carry the current version.
+    if ((saved.atlantisPrefs ?? 1) < PREFS_VERSION) Object.assign(prefs, { proof: true, inspector: false, atlantisPrefs: PREFS_VERSION });
+    return prefs;
   } catch {
     return { ...DEFAULT_PREFS };
   }
@@ -1128,6 +1141,7 @@ export class WriterPage {
       },
       onSelection: (ed) => {
         if (ed !== this.activeEditor) return;
+        if (this.proofHeld) this.proofSoon();
         this.updateFormatBar();
         this.updateSelectionCount();
         this.updateSlash();
@@ -1139,6 +1153,7 @@ export class WriterPage {
       onBlur: () => setTimeout(() => {
         this.updateBubble();
         this.updateAskChip();
+        if (this.proofHeld) this.proofSoon();
       }, 0),
       onKeyDown: (view, event) => this.onEditorKey(n.path, view, event),
       comments: () => this.commentsOf(n.path),
@@ -1146,12 +1161,13 @@ export class WriterPage {
       review: () => this.prefs.review,
       proof: () => this.prefs.proof && !isRefList(n),
       proofLookup: this.proof.lookup,
+      proofShown: this.proof.shown,
     });
     editor.view.dom.addEventListener("click", (e) => {
       const mark = (e.target as HTMLElement).closest?.("[data-proof]") as HTMLElement | null;
       if (mark && editor.view.state.selection.empty) {
         const issue = hitAt(editor.view, editor.view.posAtDOM(mark, 0));
-        if (issue) return this.openProofCard(editor, issue);
+        if (issue) return this.openProofCard(editor, issue, mark);
       }
       const hit = (e.target as HTMLElement).closest?.("[data-comment]") as HTMLElement | null;
       if (hit?.dataset.comment) this.showComment(hit.dataset.comment);
@@ -1161,12 +1177,19 @@ export class WriterPage {
       const { from, to } = editor.state.selection;
       if (to > from) this.keeper()?.copiedText(editor.state.doc.textBetween(from, to, "\n", " "));
     };
+    // Spelling & grammar: hovering a marked word shows its fix, as clicking does.
+    editor.view.dom.addEventListener("mouseover", (e) => {
+      const mark = (e.target as HTMLElement).closest?.("[data-proof]") as HTMLElement | null;
+      if (mark) this.proofHoverEnter(editor, mark);
+      else this.proofHoverLeave();
+    });
+    editor.view.dom.addEventListener("mouseleave", () => this.proofHoverLeave());
     editor.view.dom.addEventListener("copy", remember);
     editor.view.dom.addEventListener("cut", remember);
     this.editors.set(n.path, editor);
     if (!this.activeEditor) this.activeEditor = editor;
     if (focus && !this.root.querySelector(".wr-search:focus")) setTimeout(() => editor.isDestroyed || editor.commands.focus("start"), 0);
-    this.proofSoon();
+    this.proofSoon(true); // a doc that's just opened is checked straight away, not after a pause
   }
 
   private destroyEditors(): void {
@@ -3563,6 +3586,8 @@ export class WriterPage {
   // ── Slash menu ───────────────────────────────────────────────────────────
   private onEditorKey(_path: string, view: EditorView, e: KeyboardEvent): boolean {
     const ed = this.activeEditor;
+    this.lastKeyAt = Date.now();
+    if (this.menu?.dataset.hover) this.closeMenu(); // a hover card never gets in the way of typing
     if (this.mention) {
       const items = this.mentionItems();
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -3916,6 +3941,8 @@ export class WriterPage {
   }
 
   private proofTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The paragraph being typed was held back mid-word: check it once the caret moves. */
+  private proofHeld = false;
   /** Queue changed paragraphs for a check (cheap; the Proofreader waits for a pause). */
   private proofSoon(now = false): void {
     if (!this.prefs.proof) return;
@@ -3924,12 +3951,13 @@ export class WriterPage {
       this.proofTimer = null;
       const eds = this.proofEditors();
       const ed = this.activeEditor;
-      let typing: string | null = null;
-      if (ed && !ed.isDestroyed && ed.isFocused) {
+      let typing: { text: string; before: number } | null = null;
+      if (ed && !ed.isDestroyed && ed.isFocused && ed.state.selection.empty) {
         const head = ed.state.selection.head;
-        typing = proofBlocks(ed.state.doc).find((b) => b.start < head && head <= b.start + b.node.nodeSize)?.text ?? null;
+        const b = proofBlocks(ed.state.doc).find((x) => x.start < head && head < x.start + x.node.nodeSize);
+        if (b) typing = { text: b.text, before: b.pos.filter((p) => p < head).length };
       }
-      this.proof.scan(eds.map((e) => e.state.doc), typing, now);
+      this.proofHeld = this.proof.scan(eds.map((e) => e.state.doc), typing, now);
     }, now ? 0 : 150);
   }
 
@@ -3945,6 +3973,9 @@ export class WriterPage {
     return out;
   }
 
+  /** A check has finished once, so the chip stops flickering "checking" on every pause. */
+  private proofSettled = false;
+
   private updateProofChip(): void {
     const chip = this.root.querySelector<HTMLElement>("[data-proof-chip]");
     if (!chip) return;
@@ -3952,19 +3983,20 @@ export class WriterPage {
     const n = this.prefs.proof ? this.proofHits().length : 0;
     let text: string;
     let cls = "";
-    let title = "Spelling & grammar suggestions";
+    let title = "Spelling & grammar (checked on this Mac)";
     if (!this.prefs.proof) {
       text = "Checks off";
       cls = "is-off";
     } else if (st === "error") {
       text = "Checks paused";
       cls = "is-error";
-      title = `${this.proof.error} Writer will try again in a minute.`;
-    } else if (st === "checking" || st === "waiting") {
-      text = n ? `${n} · checking…` : "Checking…";
+      title = `${this.proof.error} Writer will try again shortly.`;
+    } else if ((st === "checking" || st === "waiting") && !this.proofSettled) {
+      text = "Checking…";
       cls = "is-busy";
     } else {
-      text = n ? `${n} suggestion${n === 1 ? "" : "s"}` : "No issues";
+      this.proofSettled = true;
+      text = n ? `${n} to fix` : "No issues";
       cls = n ? "has-issues" : "is-clear";
     }
     chip.className = `wr-pf-chip ${cls}`;
@@ -3985,32 +4017,67 @@ export class WriterPage {
     this.updateProofChip();
   }
 
-  /** Replace the flagged text with Claude's fix (keeps formatting, and the rest of the paragraph's marks). */
-  private acceptProof(ed: Editor, hit: ProofHit): boolean {
-    if (hit.fix === null || ed.isDestroyed) return false;
+  /** Replace the flagged text with a suggestion (keeps formatting, and the rest of the paragraph's marks). */
+  private acceptProof(ed: Editor, hit: ProofHit, fix = hit.fix): boolean {
+    if (fix === null || ed.isDestroyed) return false;
     if (ed.state.doc.textBetween(hit.from, hit.to, " ", " ") !== hit.quote) {
       this.toast("That text has changed since it was checked.");
       return false;
     }
-    this.proof.accepted(hit.text, hit);
-    ed.view.dispatch(ed.state.tr.insertText(hit.fix, hit.from, hit.to));
+    this.proof.accepted(hit.text, hit, fix);
+    ed.view.dispatch(fix === "" ? ed.state.tr.delete(hit.from, hit.to) : ed.state.tr.insertText(fix, hit.from, hit.to));
     return true;
+  }
+
+  // Hover cards: open after a short rest on a marked word, close soon after the pointer leaves
+  // both the word and the card. Never while typing (the text moves under a still pointer).
+  private lastKeyAt = 0;
+  private proofHover: { mark: HTMLElement | null; open: ReturnType<typeof setTimeout> | null; close: ReturnType<typeof setTimeout> | null } = { mark: null, open: null, close: null };
+
+  private proofHoverEnter(ed: Editor, mark: HTMLElement): void {
+    const hv = this.proofHover;
+    if (hv.close) clearTimeout(hv.close);
+    hv.close = null;
+    if (hv.mark === mark) return;
+    if (hv.open) clearTimeout(hv.open);
+    hv.mark = mark;
+    if (Date.now() - this.lastKeyAt < 700) return;
+    if (this.menu && !this.menu.dataset.hover) return; // a menu or a clicked card is already open
+    hv.open = setTimeout(() => {
+      hv.open = null;
+      if (!mark.isConnected || ed.isDestroyed || (this.menu && !this.menu.dataset.hover)) return;
+      const hit = hitAt(ed.view, ed.view.posAtDOM(mark, 0));
+      if (hit) this.openProofCard(ed, hit, mark, true);
+    }, 200);
+  }
+
+  private proofHoverLeave(): void {
+    const hv = this.proofHover;
+    if (hv.open) clearTimeout(hv.open);
+    hv.open = null;
+    hv.mark = null;
+    if (!this.menu?.dataset.hover || hv.close) return;
+    hv.close = setTimeout(() => {
+      hv.close = null;
+      if (this.menu?.dataset.hover && !this.menu.matches(":hover")) this.closeMenu();
+    }, 300);
   }
 
   private proofCardBody(ed: Editor, hit: ProofHit, after: () => void): HTMLElement {
     const soft = isSoft(hit.kind);
-    const fixBtn = hit.fix !== null
-      ? h("button", {
-          class: `wr-pf-fixbtn ${soft ? "is-long" : ""}`,
-          title: "Use this",
-          on: { click: () => { this.acceptProof(ed, hit); after(); } },
-        }, [hit.fix === "" ? h("em", { text: "(remove it)" }) : hit.fix])
-      : null;
+    const choice = (fix: string, alt = false) =>
+      h("button", {
+        class: `wr-pf-fixbtn ${soft ? "is-long" : ""} ${alt ? "is-alt" : ""}`,
+        title: "Use this",
+        on: { click: () => { this.acceptProof(ed, hit, fix); after(); } },
+      }, [fix === "" ? h("em", { text: "(remove it)" }) : fix]);
+    const fixBtn = hit.fix !== null ? choice(hit.fix) : null;
+    const alts = (hit.alts ?? []).filter((a) => a && a !== hit.fix).slice(0, 3).map((a) => choice(a, true));
     return h("div", { class: "wr-pf-body" }, [
-      h("div", { class: "wr-pf-kind" }, [h("span", { class: `wr-pf-dot ${soft ? "is-soft" : ""}` }), h("span", { text: KIND_LABEL[hit.kind] })]),
+      h("div", { class: "wr-pf-kind" }, [h("span", { class: `wr-pf-dot is-${soft ? "soft" : hit.kind === "spelling" ? "spell" : "fix"}` }), h("span", { text: KIND_LABEL[hit.kind] })]),
       soft || !fixBtn
-        ? h("p", { class: "wr-pf-note", text: hit.note })
-        : h("div", { class: "wr-pf-swap" }, [h("s", { class: "wr-pf-old", text: hit.quote }), h("span", { class: "wr-faint", text: "→" }), fixBtn]),
+        ? h("p", { class: "wr-pf-note", text: hit.note || `“${hit.quote}” isn't in the dictionary.` })
+        : h("div", { class: "wr-pf-swap" }, [h("s", { class: "wr-pf-old", text: hit.quote }), h("span", { class: "wr-faint", text: "→" }), fixBtn, ...alts]),
       soft && fixBtn ? h("div", { class: "wr-pf-try" }, [h("span", { class: "wr-faint wr-small", text: "Try:" }), fixBtn]) : null,
       !soft && fixBtn && hit.note ? h("p", { class: "wr-pf-note wr-muted", text: hit.note }) : null,
       (() => {
@@ -4023,7 +4090,7 @@ export class WriterPage {
         ]);
       })(),
       h("div", { class: "wr-pf-acts" }, [
-        h("button", { class: "wr-link wr-small", text: "Dismiss", on: { click: () => { this.proof.dismiss(hit); after(); } } }),
+        h("button", { class: "wr-link wr-small", text: "Ignore", on: { click: () => { this.proof.dismiss(hit); after(); } } }),
         hit.kind === "spelling" && !/\s/.test(hit.quote.trim())
           ? h("button", { class: "wr-link wr-small", text: "Add to dictionary", on: { click: () => { this.proof.addToDictionary(hit.quote); after(); } } })
           : null,
@@ -4031,20 +4098,29 @@ export class WriterPage {
     ]);
   }
 
-  private openProofCard(ed: Editor, hit: ProofHit): void {
+  /** The suggestion card under a marked word. A hover card doesn't take focus, so typing carries on. */
+  private openProofCard(ed: Editor, hit: ProofHit, mark?: HTMLElement, hover = false): void {
     this.closeMenu();
     const card = h("div", { class: "wr-menu wr-pf-card", attrs: { role: "dialog", "aria-label": `${KIND_LABEL[hit.kind]} suggestion` } });
+    if (hover) {
+      card.dataset.hover = "1";
+      card.addEventListener("mouseenter", () => {
+        if (this.proofHover.close) clearTimeout(this.proofHover.close);
+        this.proofHover.close = null;
+      });
+      card.addEventListener("mouseleave", () => this.proofHoverLeave());
+    }
     card.append(this.proofCardBody(ed, hit, () => { this.closeMenu(); if (!ed.isDestroyed) ed.commands.focus(); }));
     this.root.append(card);
     try {
-      const a = ed.view.coordsAtPos(hit.from);
+      const a = mark?.isConnected ? mark.getBoundingClientRect() : ed.view.coordsAtPos(hit.from);
       const w = card.offsetWidth;
-      const below = a.bottom + 8;
+      const below = a.bottom + 6;
       card.style.left = `${Math.max(8, Math.min(a.left - 12, window.innerWidth - w - 8))}px`;
-      card.style.top = `${below + card.offsetHeight > window.innerHeight - 8 ? Math.max(8, a.top - card.offsetHeight - 8) : below}px`;
+      card.style.top = `${below + card.offsetHeight > window.innerHeight - 8 ? Math.max(8, a.top - card.offsetHeight - 6) : below}px`;
     } catch {}
     this.menu = card;
-    (card.querySelector(".wr-pf-fixbtn") as HTMLElement | null)?.focus();
+    if (!hover) (card.querySelector(".wr-pf-fixbtn") as HTMLElement | null)?.focus();
   }
 
   private drawProofPanel: (() => void) | null = null;
@@ -4124,7 +4200,7 @@ export class WriterPage {
               })
             : null,
         ]),
-        h("p", { class: "wr-faint wr-small wr-pf-fine", text: "Checked by Claude Haiku on your Claude account, so it's free. Only paragraphs you change are sent, after you pause." }),
+        h("p", { class: "wr-faint wr-small wr-pf-fine", text: "Checked on this Mac by its own spelling and grammar checker, in your Mac's language. Nothing is sent anywhere. Hover a marked word to fix it." }),
         ] as Child[]).filter((c): c is HTMLElement => !!c),
       );
       place();
